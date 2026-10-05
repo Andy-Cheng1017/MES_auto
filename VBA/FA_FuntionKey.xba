@@ -1,0 +1,732 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="FA_FuntionKey" script:language="StarBasic" script:moduleType="normal">REM  *****  BASIC  *****
+
+Global gFillingSuggestion As Boolean
+
+Sub Main()
+    Dim oCell
+    Dim oSheet
+
+    If gFillingSuggestion Then Exit Sub
+
+        oCell = ThisComponent.CurrentSelection
+        oSheet = ThisComponent.CurrentController.ActiveSheet
+
+        If Not oCell.supportsService(&quot;com.sun.star.sheet.SheetCell&quot;) Then Exit Sub
+
+            Select Case oCell.CellAddress.Column
+
+             Case 1
+                If oCell.String = &quot; &quot; Then
+
+                    CopyPreviousRow(1,13)
+
+                Else
+
+                    ConvertColumn(1, 1, 2, &quot;CP_Code_DB&quot;)
+                    ApplyFaultCodeDefaults oSheet, oCell.CellAddress.Row
+                End If
+             Case 3
+
+                ConvertColumn(3, 3, 4, &quot;Accountability_Code_DB&quot;)
+             Case 5
+                LookupBOM
+             Case 8
+
+                ConvertColumn(8, 8, 9, &quot;Repair_Code_DB&quot;)
+             Case 13
+
+                ConvertColumn_1(13, 13, &quot;Station_DB&quot;)
+
+             Case 15
+
+                ImportLatestPhoto	
+
+            End Select
+            MoveToNextEmptyCell()
+
+End Sub
+
+Function LookupDB( _
+    DBName As String, _
+    Key As String, _
+    ReturnCol As Integer _
+    ) As String
+
+    Dim oDB
+    Dim i
+
+    If Trim(DBName) = &quot;&quot; Then
+        LookupDB = &quot;&quot;
+     Exit Function
+    End If
+
+    If Not ThisComponent.Sheets.hasByName(DBName) Then
+        LookupDB = &quot;&quot;
+     Exit Function
+    End If
+
+    oDB = ThisComponent.Sheets.getByName(DBName)
+
+    For i = 1 To 9999
+
+        If oDB.getCellByPosition(0, i).String = &quot;&quot; Then
+         Exit For
+        End If
+
+        If UCase(oDB.getCellByPosition(0, i).String) = UCase(Key) Then
+
+            LookupDB = oDB.getCellByPosition(ReturnCol, i).String
+
+         Exit Function
+
+        End If
+
+    Next i
+
+    LookupDB = &quot;&quot;
+
+End Function
+
+Sub EnsureBOMSettingSheet()
+
+    Dim oSettings
+
+    If Not ThisComponent.Sheets.hasByName(&quot;BOM_Setting&quot;) Then
+        ThisComponent.Sheets.insertNewByName(&quot;BOM_Setting&quot;, 0)
+    End If
+
+    oSettings = ThisComponent.Sheets.getByName(&quot;BOM_Setting&quot;)
+
+    If Trim(oSettings.getCellByPosition(0, 0).String) = &quot;&quot; Then
+        oSettings.getCellByPosition(0, 0).String = &quot;CurrentBOM&quot;
+    End If
+
+    If Trim(oSettings.getCellByPosition(1, 0).String) = &quot;&quot; Then
+        oSettings.getCellByPosition(1, 0).String = &quot;&quot;
+    End If
+
+End Sub
+
+Function GetActiveBOMSheetName() As String
+
+    Dim oSettings
+    Dim BOMName As String
+
+    EnsureBOMSettingSheet
+    oSettings = ThisComponent.Sheets.getByName(&quot;BOM_Setting&quot;)
+    BOMName = Trim(oSettings.getCellByPosition(1, 0).String)
+
+    If BOMName = &quot;&quot; Or Not ThisComponent.Sheets.hasByName(BOMName) Then
+        BOMName = SelectBOMByUser()
+        If Trim(BOMName) &lt;&gt; &quot;&quot; Then
+            SetActiveBOMSheetName BOMName
+        End If
+    End If
+
+    GetActiveBOMSheetName = BOMName
+
+End Function
+
+Sub SetActiveBOMSheetName(BOMSheetName As String)
+
+    Dim oSettings
+
+    EnsureBOMSettingSheet
+    oSettings = ThisComponent.Sheets.getByName(&quot;BOM_Setting&quot;)
+    oSettings.getCellByPosition(0, 0).String = &quot;CurrentBOM&quot;
+    oSettings.getCellByPosition(1, 0).String = Trim(BOMSheetName)
+
+End Sub
+
+Function SelectBOMByUser() As String
+
+    Dim i As Integer
+    Dim SheetName As String
+    Dim MenuText As String
+    Dim Choice As String
+    Dim SelectedIndex As Long
+    Dim BOMCount As Long
+
+    For i = 0 To ThisComponent.Sheets.Count - 1
+        SheetName = ThisComponent.Sheets.getByIndex(i).Name
+        If UCase(SheetName) &lt;&gt; &quot;BOM_SETTING&quot; _
+            And InStr(1, UCase(SheetName), &quot;BOM_DB&quot;) &gt; 0 Then
+            BOMCount = BOMCount + 1
+            MenuText = MenuText &amp; BOMCount &amp; &quot;. &quot; &amp; SheetName &amp; Chr(10)
+        End If
+    Next i
+
+    If BOMCount = 0 Then
+        MsgBox &quot;找不到 BOM 工作表，請先匯入或建立 BOM。&quot;, 48
+        SelectBOMByUser = &quot;&quot;
+     Exit Function
+    End If
+
+    Choice = InputBox(&quot;請選擇目前使用的 BOM：&quot; &amp; Chr(10) &amp; Chr(10) &amp; MenuText, _
+    &quot;BOM 選擇&quot;, &quot;1&quot;)
+    If Trim(Choice) = &quot;&quot; Or Not IsNumeric(Choice) Then
+        SelectBOMByUser = &quot;&quot;
+     Exit Function
+    End If
+
+    SelectedIndex = CLng(Choice)
+    If SelectedIndex &lt; 1 Or SelectedIndex &gt; BOMCount Then
+        MsgBox &quot;選項編號無效，請重新選擇 BOM。&quot;, 48
+        SelectBOMByUser = &quot;&quot;
+     Exit Function
+    End If
+
+    BOMCount = 0
+    For i = 0 To ThisComponent.Sheets.Count - 1
+        SheetName = ThisComponent.Sheets.getByIndex(i).Name
+        If UCase(SheetName) &lt;&gt; &quot;BOM_SETTING&quot; _
+            And InStr(1, UCase(SheetName), &quot;BOM_DB&quot;) &gt; 0 Then
+            BOMCount = BOMCount + 1
+            If BOMCount = SelectedIndex Then
+                SelectBOMByUser = SheetName
+             Exit Function
+            End If
+        End If
+    Next i
+
+    SelectBOMByUser = &quot;&quot;
+
+End Function
+
+Sub ConvertColumn( _
+    InputCol As Integer, _
+    CodeCol As Integer, _
+    DescCol As Integer, _
+    DBName As String _
+    )
+
+    Dim oSheet
+    Dim oCell
+    Dim Key
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+    oCell = ThisComponent.CurrentSelection
+
+    If Not oCell.supportsService(&quot;com.sun.star.sheet.SheetCell&quot;) Then Exit Sub
+
+        If oCell.CellAddress.Column &lt;&gt; InputCol Then Exit Sub
+
+            Key = Trim(oCell.String)
+
+            If Key = &quot;&quot; Then Exit Sub
+
+                Dim NewCode
+                Dim NewDesc
+
+                NewCode = LookupDB(DBName, Key, 1)
+                NewDesc = LookupDB(DBName, Key, 2)
+
+                If NewCode &lt;&gt; &quot;&quot; Then
+
+                    oCell.String = NewCode
+
+                    oSheet.getCellByPosition(DescCol, oCell.CellAddress.Row).String = NewDesc
+
+                End If
+
+End Sub
+
+Sub ConvertColumn_1( _
+    InputCol As Integer, _
+    CodeCol As Integer, _
+    DBName As String _
+    )
+
+    Dim oSheet
+    Dim oCell
+    Dim Key
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+    oCell = ThisComponent.CurrentSelection
+
+    If Not oCell.supportsService(&quot;com.sun.star.sheet.SheetCell&quot;) Then Exit Sub
+
+        If oCell.CellAddress.Column &lt;&gt; InputCol Then Exit Sub
+
+            Key = Trim(oCell.String)
+
+            If Key = &quot;&quot; Then Exit Sub
+
+                Dim NewCode
+
+                NewCode = LookupDB(DBName, Key, 1)
+
+                If NewCode &lt;&gt; &quot;&quot; Then
+
+                    oCell.String = NewCode
+
+                End If
+
+End Sub
+
+Sub LookupBOM()
+
+    Dim oSheet
+    Dim oCell
+
+    Dim RefDes
+    Dim Board
+    Dim Desc
+    Dim ActiveBOM As String
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+    oCell = ThisComponent.CurrentSelection
+
+    If Not oCell.supportsService(&quot;com.sun.star.sheet.SheetCell&quot;) Then Exit Sub
+
+        RefDes = UCase(Trim(oCell.String))
+        If RefDes = &quot;&quot; Then Exit Sub
+
+            ActiveBOM = GetActiveBOMSheetName()
+            If Trim(ActiveBOM) = &quot;&quot; Then Exit Sub
+                If Not ThisComponent.Sheets.hasByName(ActiveBOM) Then
+                    MsgBox &quot;目前選用的 BOM 工作表不存在：&quot; &amp; ActiveBOM, 48
+                 Exit Sub
+                End If
+
+                Board = LookupDB(ActiveBOM, RefDes, 1)
+                Desc = LookupDB(ActiveBOM, RefDes, 2)
+
+                If Board &lt;&gt; &quot;&quot; Then
+                    oSheet.getCellByPosition(6, oCell.CellAddress.Row).String = Board
+                    oSheet.getCellByPosition(7, oCell.CellAddress.Row).String = Desc
+                End If
+
+End Sub
+
+Sub ApplyFaultCodeDefaults(oSheet, RowNo As Long)
+
+    Dim oDefaults
+    Dim FaultCode As String
+    Dim RespCodeKey As String
+    Dim RepairCodeKey As String
+    Dim DefaultRow As Long
+    Dim RespCode As String
+    Dim RespDesc As String
+    Dim RepairCode As String
+    Dim RepairDesc As String
+
+    If RowNo = 0 Or Not ThisComponent.Sheets.hasByName(&quot;FaultCode_Default_DB&quot;) Then Exit Sub
+
+        FaultCode = Trim(oSheet.getCellByPosition(1, RowNo).String)
+        If FaultCode = &quot;&quot; Then Exit Sub
+
+            On Error Goto ResetDefaultGuard
+                gFillingSuggestion = True
+                oDefaults = ThisComponent.Sheets.getByName(&quot;FaultCode_Default_DB&quot;)
+
+                DefaultRow = 1
+                Do While Trim(oDefaults.getCellByPosition(0, DefaultRow).String) &lt;&gt; &quot;&quot;
+                    If UCase(Trim(oDefaults.getCellByPosition(0, DefaultRow).String)) = UCase(FaultCode) Then
+                        RespCodeKey = Trim(oDefaults.getCellByPosition(1, DefaultRow).String)
+                        RepairCodeKey = Trim(oDefaults.getCellByPosition(2, DefaultRow).String)
+
+                        If Trim(oSheet.getCellByPosition(3, RowNo).String) = &quot;&quot; And RespCodeKey &lt;&gt; &quot;&quot; Then
+                            RespCode = LookupDB(&quot;Accountability_Code_DB&quot;, RespCodeKey, 1)
+                            RespDesc = LookupDB(&quot;Accountability_Code_DB&quot;, RespCodeKey, 2)
+                            If RespCode &lt;&gt; &quot;&quot; Then oSheet.getCellByPosition(3, RowNo).String = RespCode
+                                If RespDesc &lt;&gt; &quot;&quot; Then oSheet.getCellByPosition(4, RowNo).String = RespDesc
+                                End If
+
+                                If Trim(oSheet.getCellByPosition(8, RowNo).String) = &quot;&quot; And RepairCodeKey &lt;&gt; &quot;&quot; Then
+                                    RepairCode = LookupDB(&quot;Repair_Code_DB&quot;, RepairCodeKey, 1)
+                                    RepairDesc = LookupDB(&quot;Repair_Code_DB&quot;, RepairCodeKey, 2)
+                                    If RepairCode &lt;&gt; &quot;&quot; Then oSheet.getCellByPosition(8, RowNo).String = RepairCode
+                                        If RepairDesc &lt;&gt; &quot;&quot; Then oSheet.getCellByPosition(9, RowNo).String = RepairDesc
+                                        End If
+                                     Exit Do
+                                    End If
+                                    DefaultRow = DefaultRow + 1
+                                Loop
+
+                                gFillingSuggestion = False
+                                SuggestRootCause oSheet, RowNo
+                                SuggestRepairAction oSheet, RowNo
+                             Exit Sub
+
+ ResetDefaultGuard:
+                                gFillingSuggestion = False
+
+End Sub
+
+Function ShouldSkipInputColumn(oSheet, RowNo As Long, ColNo As Long) As Boolean
+
+    Dim oDefaults
+    Dim FaultCode As String
+    Dim SkipColumns As String
+    Dim DefaultRow As Long
+
+    If RowNo = 0 Or Not ThisComponent.Sheets.hasByName(&quot;FaultCode_Default_DB&quot;) Then Exit Function
+
+        FaultCode = Trim(oSheet.getCellByPosition(1, RowNo).String)
+        If FaultCode = &quot;&quot; Then Exit Function
+
+            oDefaults = ThisComponent.Sheets.getByName(&quot;FaultCode_Default_DB&quot;)
+            DefaultRow = 1
+            Do While Trim(oDefaults.getCellByPosition(0, DefaultRow).String) &lt;&gt; &quot;&quot;
+                If UCase(Trim(oDefaults.getCellByPosition(0, DefaultRow).String)) = UCase(FaultCode) Then
+                    SkipColumns = &quot;|&quot; &amp; Replace(Trim(oDefaults.getCellByPosition(3, DefaultRow).String), &quot; &quot;, &quot;&quot;) &amp; &quot;|&quot;
+                    ShouldSkipInputColumn = InStr(1, SkipColumns, &quot;|&quot; &amp; ColNo &amp; &quot;|&quot;) &gt; 0
+                 Exit Function
+                End If
+                DefaultRow = DefaultRow + 1
+            Loop
+
+End Function
+
+Sub MoveToNextEmptyCell()
+
+    Dim oDoc
+    Dim oSheet
+    Dim oCell
+    Dim oController
+
+    Dim RowNo
+    Dim ColNo
+
+    oDoc = ThisComponent
+    oController = oDoc.CurrentController
+
+    oCell = oController.Selection
+    oSheet = oController.ActiveSheet
+
+    RowNo = oCell.CellAddress.Row
+    ColNo = oCell.CellAddress.Column
+
+    Do
+
+        ColNo = ColNo + 1
+
+        If ColNo &gt; 1023 Then
+            RowNo = RowNo + 1
+            ColNo = 0
+        End If
+
+    Loop While Trim(oSheet.getCellByPosition(ColNo, RowNo).String) &lt;&gt; &quot;&quot; _
+    Or ShouldSkipInputColumn(oSheet, RowNo, ColNo)
+
+    oController.Select(oSheet.getCellByPosition(ColNo, RowNo))
+
+    If ColNo = 11 Then
+        SuggestRootCause oSheet, RowNo
+        If Trim(oSheet.getCellByPosition(11, RowNo).String) &lt;&gt; &quot;&quot; _
+            And Trim(oSheet.getCellByPosition(12, RowNo).String) = &quot;&quot; Then
+            ColNo = 12
+            oController.Select(oSheet.getCellByPosition(ColNo, RowNo))
+            SuggestRepairAction oSheet, RowNo
+        End If
+    Elseif ColNo = 12 Then
+        SuggestRepairAction oSheet, RowNo
+    End If
+
+End Sub
+
+Sub SuggestRootCause(oSheet, RowNo As Long)
+
+    Dim oDB
+    Dim FaultCode As String
+    Dim RespCode As String
+    Dim Location As String
+    Dim Template As String
+    Dim DBRow As Long
+    Dim MatchCount As Long
+    Dim MatchNo As Long
+    Dim SelectedMatch As Long
+    Dim Choice As String
+    Dim MenuText As String
+
+    If oSheet.Name &lt;&gt; &quot;FA_Report&quot; Or RowNo = 0 Then Exit Sub
+        If Trim(oSheet.getCellByPosition(11, RowNo).String) &lt;&gt; &quot;&quot; Then Exit Sub
+
+            FaultCode = Trim(oSheet.getCellByPosition(1, RowNo).String)
+            RespCode = Trim(oSheet.getCellByPosition(3, RowNo).String)
+            Location = Trim(oSheet.getCellByPosition(5, RowNo).String)
+
+            If FaultCode = &quot;&quot; Or RespCode = &quot;&quot; Then Exit Sub
+                If Not ThisComponent.Sheets.hasByName(&quot;RootCause_DB&quot;) Then Exit Sub
+
+                    On Error Goto ResetGuard
+                        gFillingSuggestion = True
+                        oDB = ThisComponent.Sheets.getByName(&quot;RootCause_DB&quot;)
+
+                        DBRow = 1
+                        Do While Trim(oDB.getCellByPosition(0, DBRow).String) &lt;&gt; &quot;&quot;
+                            If UCase(Trim(oDB.getCellByPosition(0, DBRow).String)) = UCase(FaultCode) _
+                                And (UCase(Trim(oDB.getCellByPosition(1, DBRow).String)) = UCase(RespCode) _
+                                Or Trim(oDB.getCellByPosition(1, DBRow).String) = &quot;*&quot;) _
+                                And Trim(oDB.getCellByPosition(2, DBRow).String) &lt;&gt; &quot;&quot; _
+                                And (Location &lt;&gt; &quot;&quot; Or InStr(1, oDB.getCellByPosition(2, DBRow).String, &quot;{Location}&quot;) = 0) Then
+                                MatchCount = MatchCount + 1
+                                MenuText = MenuText &amp; MatchCount &amp; &quot;. &quot; &amp; _
+                                oDB.getCellByPosition(2, DBRow).String &amp; Chr(10)
+                            End If
+                            DBRow = DBRow + 1
+                        Loop
+
+                        If MatchCount = 1 Then
+                            SelectedMatch = 1
+                        Elseif MatchCount &gt; 1 Then
+                            Choice = InputBox(&quot;請選擇不良原因模板編號：&quot; &amp; Chr(10) &amp; Chr(10) &amp; MenuText, _
+                            &quot;RootCause_DB&quot;, &quot;1&quot;)
+                            If Choice = &quot;&quot; Or Not IsNumeric(Choice) Then Goto ResetGuard
+                                SelectedMatch = CLng(Choice)
+                                If SelectedMatch &lt; 1 Or SelectedMatch &gt; MatchCount Then Goto ResetGuard
+                                End If
+
+                                If SelectedMatch &gt; 0 Then
+                                    DBRow = 1
+                                    MatchNo = 0
+                                    Do While Trim(oDB.getCellByPosition(0, DBRow).String) &lt;&gt; &quot;&quot;
+                                        If UCase(Trim(oDB.getCellByPosition(0, DBRow).String)) = UCase(FaultCode) _
+                                            And (UCase(Trim(oDB.getCellByPosition(1, DBRow).String)) = UCase(RespCode) _
+                                            Or Trim(oDB.getCellByPosition(1, DBRow).String) = &quot;*&quot;) _
+                                            And Trim(oDB.getCellByPosition(2, DBRow).String) &lt;&gt; &quot;&quot; _
+                                            And (Location &lt;&gt; &quot;&quot; Or InStr(1, oDB.getCellByPosition(2, DBRow).String, &quot;{Location}&quot;) = 0) Then
+                                            MatchNo = MatchNo + 1
+                                            If MatchNo = SelectedMatch Then
+                                                Template = oDB.getCellByPosition(2, DBRow).String
+                                             Exit Do
+                                            End If
+                                        End If
+                                        DBRow = DBRow + 1
+                                    Loop
+
+                                    If Template &lt;&gt; &quot;&quot; Then
+                                        oSheet.getCellByPosition(11, RowNo).String = Replace(Template, &quot;{Location}&quot;, Location)
+                                    End If
+                                End If
+
+ ResetGuard:
+                                gFillingSuggestion = False
+
+End Sub
+
+Sub SuggestRepairAction(oSheet, RowNo As Long)
+
+    Dim oDB
+    Dim RepairDesc As String
+    Dim Location As String
+    Dim Template As String
+    Dim DBRow As Long
+    Dim MatchCount As Long
+    Dim MatchNo As Long
+    Dim SelectedMatch As Long
+    Dim Choice As String
+    Dim MenuText As String
+
+    If oSheet.Name &lt;&gt; &quot;FA_Report&quot; Or RowNo = 0 Then Exit Sub
+        If Trim(oSheet.getCellByPosition(12, RowNo).String) &lt;&gt; &quot;&quot; Then Exit Sub
+
+            RepairDesc = Trim(oSheet.getCellByPosition(9, RowNo).String)
+            Location = Trim(oSheet.getCellByPosition(5, RowNo).String)
+
+            If RepairDesc = &quot;&quot; Then Exit Sub
+                If Not ThisComponent.Sheets.hasByName(&quot;RepairAction_DB&quot;) Then Exit Sub
+
+                    On Error Goto ResetActionGuard
+                        gFillingSuggestion = True
+                        oDB = ThisComponent.Sheets.getByName(&quot;RepairAction_DB&quot;)
+
+                        DBRow = 1
+                        Do While Trim(oDB.getCellByPosition(0, DBRow).String) &lt;&gt; &quot;&quot;
+                            If UCase(Trim(oDB.getCellByPosition(0, DBRow).String)) = UCase(RepairDesc) _
+                                And Trim(oDB.getCellByPosition(1, DBRow).String) &lt;&gt; &quot;&quot; Then
+                                MatchCount = MatchCount + 1
+                                MenuText = MenuText &amp; MatchCount &amp; &quot;. &quot; &amp; _
+                                oDB.getCellByPosition(1, DBRow).String &amp; Chr(10)
+                            End If
+                            DBRow = DBRow + 1
+                        Loop
+
+                        If MatchCount = 1 Then
+                            SelectedMatch = 1
+                        Elseif MatchCount &gt; 1 Then
+                            Choice = InputBox(&quot;請選擇 RepairAction 編號：&quot; &amp; Chr(10) &amp; Chr(10) &amp; MenuText, _
+                            &quot;RepairAction_DB&quot;, &quot;1&quot;)
+                            If Choice = &quot;&quot; Or Not IsNumeric(Choice) Then Goto ResetActionGuard
+                                SelectedMatch = CLng(Choice)
+                                If SelectedMatch &lt; 1 Or SelectedMatch &gt; MatchCount Then Goto ResetActionGuard
+                                End If
+
+                                If SelectedMatch &gt; 0 Then
+                                    DBRow = 1
+                                    MatchNo = 0
+                                    Do While Trim(oDB.getCellByPosition(0, DBRow).String) &lt;&gt; &quot;&quot;
+                                        If UCase(Trim(oDB.getCellByPosition(0, DBRow).String)) = UCase(RepairDesc) _
+                                            And Trim(oDB.getCellByPosition(1, DBRow).String) &lt;&gt; &quot;&quot; Then
+                                            MatchNo = MatchNo + 1
+                                            If MatchNo = SelectedMatch Then
+                                                Template = oDB.getCellByPosition(1, DBRow).String
+                                             Exit Do
+                                            End If
+                                        End If
+                                        DBRow = DBRow + 1
+                                    Loop
+
+                                    If Template &lt;&gt; &quot;&quot; Then
+                                        oSheet.getCellByPosition(12, RowNo).String = Replace(Template, &quot;{Location}&quot;, Location)
+                                    End If
+                                End If
+
+ ResetActionGuard:
+                                gFillingSuggestion = False
+
+End Sub
+
+Sub ImportLatestPhoto()
+
+    Dim oSheet
+    Dim oCell
+
+    Dim RowNo
+    Dim SerialNo
+
+    Dim SourceFile
+    Dim DestFile
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+
+    oCell = ThisComponent.CurrentSelection
+
+    RowNo = oCell.CellAddress.Row
+
+    SerialNo = Trim(oSheet.getCellByPosition(0, RowNo).String)
+
+    If SerialNo = &quot;&quot; Then
+
+        MsgBox &quot;A欄序號不可空白&quot;
+
+     Exit Sub
+
+    End If
+
+    SourceFile = GetLatestPhoto()
+
+    If SourceFile = &quot;&quot; Then
+
+        MsgBox &quot;找不到照片&quot;
+
+     Exit Sub
+
+    End If
+
+    DestFile = _
+    &quot;C:\Users\andygfcheng\OneDrive - LITE-ON TECHNOLOGY CORP\&quot; &amp; _
+    &quot;PSS 異常登記 - 鄭高峰\&quot; &amp; _
+    SerialNo &amp; &quot;.jpg&quot;
+
+    Name SourceFile As DestFile
+
+    MsgBox &quot;完成：&quot; &amp; Chr(10) &amp; DestFile
+
+    &apos;InsertPhoto
+
+End Sub
+
+Function GetLatestPhoto() As String
+
+    Dim Folder As String
+    Dim FileName As String
+
+    Dim NewestFile As String
+    Dim NewestDate As Date
+
+    Folder = _
+    &quot;C:\Users\andygfcheng\OneDrive - LITE-ON TECHNOLOGY CORP\&quot; &amp; _
+    &quot;圖片\相機膠卷\&quot;
+
+    FileName = Dir(Folder &amp; &quot;*.jpg&quot;)
+
+    Do While FileName &lt;&gt; &quot;&quot;
+
+        If FileDateTime(Folder &amp; FileName) &gt; NewestDate Then
+
+            NewestDate = FileDateTime(Folder &amp; FileName)
+
+            NewestFile = Folder &amp; FileName
+
+        End If
+
+        FileName = Dir()
+
+    Loop
+
+    GetLatestPhoto = NewestFile
+
+End Function
+
+Sub InsertPhoto()
+
+    Dim oSheet
+    Dim oCell
+
+    Dim RowNo
+    Dim SerialNo
+    Dim PhotoFile
+
+    Dim oShape
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+
+    oCell = ThisComponent.CurrentSelection
+
+    RowNo = oCell.CellAddress.Row
+
+    SerialNo = oSheet.getCellByPosition(0, RowNo).String
+
+    PhotoFile = _
+    &quot;C:\Users\andygfcheng\&quot; &amp; _
+    &quot;OneDrive - LITE-ON TECHNOLOGY CORP\&quot; &amp; _
+    &quot;PSS 異常登記 - 鄭高峰\&quot; &amp; _
+    SerialNo &amp; &quot;.jpg&quot;
+
+
+    oShape = ThisComponent.createInstance(&quot;com.sun.star.drawing.GraphicObjectShape&quot;)
+
+    oShape.GraphicURL = ConvertToURL(PhotoFile)
+
+    oShape.Position.X = oCell.Position.X
+    oShape.Position.Y = oCell.Position.Y
+
+    oShape.Size.Width = 3000
+    oShape.Size.Height = 2000
+
+    oSheet.DrawPage.add(oShape)
+
+End Sub
+
+
+Sub CopyPreviousRow(StartCol As Long, EndCol As Long)
+
+    Dim oSheet
+    Dim oCell
+    Dim Col As Long
+
+    oSheet = ThisComponent.CurrentController.ActiveSheet
+    oCell = ThisComponent.CurrentSelection
+
+    If oCell.CellAddress.Row = 0 Then Exit Sub
+
+        For Col = StartCol To EndCol
+
+            oSheet.getCellByPosition( _
+            Col, _
+            oCell.CellAddress.Row _
+            ).String = _
+            oSheet.getCellByPosition( _
+            Col, _
+            oCell.CellAddress.Row - 1 _
+            ).String
+
+        Next Col
+
+End Sub
+
+</script:module>

@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="AHK" script:language="StarBasic" script:moduleType="normal">REM  *****  BASIC  *****   
+
+Sub ExportMESJobsJson()
+
+    Dim oSheet
+    Dim row As Long
+    Dim json As String
+    Dim firstRow As Boolean
+    Dim fn As Integer
+    Dim SavePath As String
+
+    SavePath = GetCurrentFolder() &amp; &quot;\MES_Jobs.json&quot;
+
+    If FileExists(ConvertToURL(SavePath)) Then
+        Kill SavePath
+    End If
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+
+    json = &quot;[&quot;
+    firstRow = True
+    row = 1        &apos; A2開始
+
+    Do While Trim(oSheet.getCellByPosition(0, row).String) &lt;&gt; &quot;&quot;
+
+        If Not firstRow Then
+            json = json &amp; &quot;,&quot;
+        End If
+
+        json = json &amp; &quot;{&quot;
+
+        json = json &amp; &quot;&quot;&quot;SN&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(0, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;FaultCode&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(1, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;FaultDesc&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(2, row).String) &amp; &quot;&quot;&quot;,&quot;
+
+        json = json &amp; &quot;&quot;&quot;RespCode&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(3, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;RespDesc&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(4, row).String) &amp; &quot;&quot;&quot;,&quot;
+
+        json = json &amp; &quot;&quot;&quot;Location&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(5, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;Layer&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(6, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;PartDesc&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(7, row).String) &amp; &quot;&quot;&quot;,&quot;
+
+        json = json &amp; &quot;&quot;&quot;RepairCode&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(8, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;RepairDesc&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(9, row).String) &amp; &quot;&quot;&quot;,&quot;
+
+        json = json &amp; &quot;&quot;&quot;Symptom&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(10, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;RootCause&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(11, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;RepairAction&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(12, row).String) &amp; &quot;&quot;&quot;,&quot;
+
+        json = json &amp; &quot;&quot;&quot;ReturnStation&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(13, row).String) &amp; &quot;&quot;&quot;,&quot;
+        json = json &amp; &quot;&quot;&quot;BoardNo&quot;&quot;:&quot;&quot;&quot; &amp; EscapeJson(oSheet.getCellByPosition(14, row).String) &amp; &quot;&quot;&quot;&quot;
+
+        json = json &amp; &quot;}&quot;
+
+        firstRow = False
+        row = row + 1
+
+    Loop
+
+    json = json &amp; &quot;]&quot;
+
+    SaveTextUTF8(SavePath, json)
+
+    MsgBox &quot;已輸出：&quot; &amp; Chr(10) &amp; SavePath
+
+    &apos; 啟動 AHK (之後路徑再改)
+    &apos;Shell(&quot;C:\FA_Auto\MES_Batch.exe&quot;)
+
+End Sub
+
+Function EscapeJson(s As String) As String
+
+    s = Replace(s, &quot;\&quot;, &quot;\\&quot;)
+    s = Replace(s, &quot;&quot;&quot;&quot;, &quot;\&quot;&quot;&quot;)
+    s = Replace(s, Chr(10), &quot;\n&quot;)
+    s = Replace(s, Chr(13), &quot;&quot;)
+
+    EscapeJson = s
+
+End Function
+
+Function GetCurrentFolder() As String
+
+    Dim DocPath As String
+    Dim p As Long
+
+    DocPath = ConvertFromURL(ThisComponent.URL)
+
+    p = Len(DocPath)
+
+    Do While p &gt; 0
+        If Mid(DocPath, p, 1) = &quot;\&quot; Then Exit Do
+            p = p - 1
+        Loop
+
+        GetCurrentFolder = Left(DocPath, p - 1)
+
+End Function
+
+Sub SaveTextUTF8(FileName As String, TextData As String)
+
+    Dim oStream
+    Dim oTextOutput
+
+    oStream = CreateUnoService(&quot;com.sun.star.io.TextOutputStream&quot;)
+    oStream.setEncoding(&quot;UTF-8&quot;)
+
+    oTextOutput = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
+
+    Dim oFileStream
+    oFileStream = oTextOutput.openFileWrite(ConvertToURL(FileName))
+
+    oStream.setOutputStream(oFileStream)
+
+    oStream.writeString(TextData)
+
+    oStream.closeOutput()
+
+End Sub
+
+Sub ArchiveData()
+
+    Dim oDoc
+    Dim oSrcSheet
+    Dim oDesktop
+    Dim oHistoryDoc
+    Dim oSimpleFileAccess
+    Dim oDstSheet
+
+    Dim SrcRow As Long
+    Dim DstRow As Long
+    Dim LastCol As Long
+    Dim Col As Long
+    Dim HistoryURL As String
+    Dim NewHistory As Boolean
+    Dim HistoryOpen As Boolean
+    Dim ErrorStage As String
+    Dim ErrorMessage As String
+    Dim aLoadArgs(0) As New com.sun.star.beans.PropertyValue
+    Dim aStoreArgs(1) As New com.sun.star.beans.PropertyValue
+
+    On Error Goto HandleError
+
+        oDoc = ThisComponent
+
+        If oDoc.URL = &quot;&quot; Then
+            MsgBox &quot;請先儲存 MES_auto.ods，再執行歸檔。&quot;, 48
+         Exit Sub
+        End If
+
+        oSrcSheet = oDoc.Sheets.getByName(&quot;FA_Report&quot;)
+        HistoryURL = ConvertToURL(GetCurrentFolder() &amp; &quot;\History.ods&quot;)
+
+        ErrorStage = &quot;開啟或建立 History.ods&quot;
+        oSimpleFileAccess = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
+        oDesktop = CreateUnoService(&quot;com.sun.star.frame.Desktop&quot;)
+
+        aLoadArgs(0).Name = &quot;Hidden&quot;
+        aLoadArgs(0).Value = True
+
+        If oSimpleFileAccess.exists(HistoryURL) Then
+            oHistoryDoc = oDesktop.loadComponentFromURL(HistoryURL, &quot;_blank&quot;, 0, aLoadArgs())
+        Else
+            oHistoryDoc = oDesktop.loadComponentFromURL(&quot;Private:factory/scalc&quot;, &quot;_blank&quot;, 0, aLoadArgs())
+            NewHistory = True
+        End If
+        HistoryOpen = True
+
+        If NewHistory Then
+            oHistoryDoc.Sheets.getByIndex(0).Name = &quot;History&quot;
+        Elseif Not oHistoryDoc.Sheets.hasByName(&quot;History&quot;) Then
+            oHistoryDoc.Sheets.insertNewByName(&quot;History&quot;, oHistoryDoc.Sheets.getCount())
+        End If
+
+        oDstSheet = oHistoryDoc.Sheets.getByName(&quot;History&quot;)
+
+        &apos;找 History 最後一列
+        DstRow = 0
+        Do While oDstSheet.getCellByPosition(0, DstRow).String &lt;&gt; &quot;&quot;
+            DstRow = DstRow + 1
+        Loop
+
+        &apos;找 FA_Report 最後欄
+        LastCol = 1
+
+        Do While oSrcSheet.getCellByPosition(LastCol, 0).String &lt;&gt; &quot;&quot;
+            LastCol = LastCol + 1
+        Loop
+
+        LastCol = LastCol - 1
+
+        ErrorStage = &quot;寫入 History.ods&quot;
+        SrcRow = 0
+
+        Do While oSrcSheet.getCellByPosition(1, SrcRow).String &lt;&gt; &quot;&quot;
+
+            &apos;日期
+            oDstSheet.getCellByPosition(0, DstRow).String = Format(Date, &quot;yyyy/mm/dd&quot;)
+
+            &apos;複製 B欄開始資料
+            For Col = 0 To LastCol
+
+                oDstSheet.getCellByPosition(Col + 1, DstRow).String = _
+                oSrcSheet.getCellByPosition(Col, SrcRow).String
+
+            Next Col
+
+            DstRow = DstRow + 1
+            SrcRow = SrcRow + 1
+
+        Loop
+
+        ErrorStage = &quot;儲存 History.ods&quot;
+        If NewHistory Then
+            aStoreArgs(0).Name = &quot;FilterName&quot;
+            aStoreArgs(0).Value = &quot;calc8&quot;
+            aStoreArgs(1).Name = &quot;Overwrite&quot;
+            aStoreArgs(1).Value = True
+            oHistoryDoc.storeAsURL(HistoryURL, aStoreArgs())
+        Else
+            oHistoryDoc.store()
+        End If
+
+        oHistoryDoc.close(True)
+        HistoryOpen = False
+
+        ErrorStage = &quot;清除 FA_Report&quot;
+        ClearFAReportFromDoc oDoc
+
+        MsgBox &quot;資料轉移完成&quot;
+     Exit Sub
+
+ HandleError:
+        ErrorMessage = Error$
+        On Error Resume Next
+        If HistoryOpen Then oHistoryDoc.close(True)
+            MsgBox &quot;歸檔失敗（&quot; &amp; ErrorStage &amp; &quot;），FA_Report 未清除：&quot; &amp; Chr(10) &amp; ErrorMessage, 16
+
+End Sub
+
+Sub ClearFAReport()
+
+    ClearFAReportFromDoc ThisComponent
+
+End Sub
+
+Sub ClearFAReportFromDoc(oDoc)
+
+    Dim oSheet
+    Dim oCursor
+    Dim oRange
+
+    oSheet = oDoc.Sheets.getByName(&quot;FA_Report&quot;)
+
+    oCursor = oSheet.createCursor()
+    oCursor.gotoEndOfUsedArea(True)
+
+    Dim LastRow As Long
+    Dim LastCol As Long
+
+    LastRow = oCursor.RangeAddress.EndRow
+    LastCol = oCursor.RangeAddress.EndColumn
+
+    If LastRow &lt; 1 Then Exit Sub
+
+        oRange = oSheet.getCellRangeByPosition(0, 1, LastCol, LastRow)
+
+        oRange.clearContents(1023)
+
+End Sub
+
+</script:module>

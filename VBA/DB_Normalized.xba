@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="DB_Normalized" script:language="StarBasic" script:moduleType="normal">REM  *****  BASIC  *****
+
+Sub NormalizeBOM()
+
+    Dim oDoc
+    Dim RawFolder As String
+    Dim NormalizedFolder As String
+    Dim RawFileName As String
+    Dim CsvPath As String
+    Dim OutputSheetName As String
+
+    oDoc = ThisComponent
+    RawFolder = GetBOMRawFolder(oDoc)
+    NormalizedFolder = GetBOMNormalizedFolder(oDoc)
+
+    EnsureFolder RawFolder
+    EnsureFolder NormalizedFolder
+
+    RawFileName = InputBox(&quot;請輸入原始 BOM CSV 名稱（不含 .csv）：&quot; &amp; Chr(10) &amp; &quot;範例：PS_2442&quot;, &quot;Normalize BOM&quot;, &quot;&quot;)
+    If Trim(RawFileName) = &quot;&quot; Then Exit Sub
+
+        If InStr(UCase(RawFileName), &quot;.CSV&quot;) = 0 Then
+            RawFileName = RawFileName &amp; &quot;.csv&quot;
+        End If
+
+        CsvPath = RawFolder &amp; &quot;\&quot; &amp; RawFileName
+        If Not FileExists(CsvPath) Then
+            MsgBox &quot;找不到原始 BOM：&quot; &amp; Chr(10) &amp; CsvPath, 48
+         Exit Sub
+        End If
+
+        OutputSheetName = &quot;BOM_DB_&quot; &amp; StripCsvExtension(RawFileName)
+        NormalizeBOMFromCSVFile oDoc, CsvPath, OutputSheetName, NormalizedFolder
+        WriteActiveBOMName oDoc, OutputSheetName
+        MsgBox &quot;完成：&quot; &amp; OutputSheetName &amp; Chr(10) &amp; &quot;已寫入 &quot; &amp; NormalizedFolder, 64
+
+End Sub
+
+Function GetWorkbookFolder(oDoc) As String
+
+    Dim Url As String
+    Dim LastSlash As Long
+    Dim FolderUrl As String
+
+    If Trim(oDoc.URL) = &quot;&quot; Then
+        GetWorkbookFolder = CurDir
+     Exit Function
+    End If
+
+    Url = oDoc.URL
+    LastSlash = 0
+    Do While InStr(LastSlash + 1, Url, &quot;/&quot;) &gt; 0
+        LastSlash = InStr(LastSlash + 1, Url, &quot;/&quot;)
+    Loop
+
+    If LastSlash &gt; 0 Then
+        FolderUrl = Left(Url, LastSlash)
+        GetWorkbookFolder = ConvertFromURL(FolderUrl)
+    Else
+        GetWorkbookFolder = CurDir
+    End If
+
+End Function
+
+Function GetBOMRawFolder(oDoc) As String
+    GetBOMRawFolder = JoinBOMPath(GetWorkbookFolder(oDoc), &quot;BOM_Raw&quot;)
+End Function
+
+Function GetBOMNormalizedFolder(oDoc) As String
+    GetBOMNormalizedFolder = JoinBOMPath(GetWorkbookFolder(oDoc), &quot;BOM_Normalized&quot;)
+End Function
+
+Function JoinBOMPath(BasePath As String, ChildPath As String) As String
+
+    If Right(BasePath, 1) = &quot;\&quot; Or Right(BasePath, 1) = &quot;/&quot; Then
+        BasePath = Left(BasePath, Len(BasePath) - 1)
+    End If
+
+    JoinBOMPath = BasePath &amp; &quot;\&quot; &amp; ChildPath
+
+End Function
+
+Sub EnsureFolder(FolderPath As String)
+
+    Dim Found As String
+
+    If Trim(FolderPath) = &quot;&quot; Then Exit Sub
+
+        On Error Resume Next
+        Found = Dir$(FolderPath, vbDirectory)
+        If Found = &quot;&quot; Then MkDir FolderPath
+            On Error Goto 0
+
+End Sub
+
+Function FileExists(Filename As String) As Boolean
+
+    On Error Goto NoFile
+        If Dir$(Filename) &lt;&gt; &quot;&quot; Then
+            FileExists = True
+        Else
+            FileExists = False
+        End If
+     Exit Function
+
+ NoFile:
+        FileExists = False
+
+End Function
+
+Function StripCsvExtension(FileName As String) As String
+
+    Dim NewName As String
+    NewName = FileName
+    If UCase(Right(NewName, 4)) = &quot;.CSV&quot; Then
+        NewName = Left(NewName, Len(NewName) - 4)
+    End If
+    StripCsvExtension = NewName
+
+End Function
+
+Sub EnsureBOMConfigSheet(oDoc)
+
+    Dim oSettings
+
+    If Not oDoc.Sheets.hasByName(&quot;BOM_Setting&quot;) Then
+        oDoc.Sheets.insertNewByName(&quot;BOM_Setting&quot;, 0)
+    End If
+
+    oSettings = oDoc.Sheets.getByName(&quot;BOM_Setting&quot;)
+
+    If Trim(oSettings.getCellByPosition(0, 0).String) = &quot;&quot; Then
+        oSettings.getCellByPosition(0, 0).String = &quot;CurrentBOM&quot;
+    End If
+
+    If Trim(oSettings.getCellByPosition(1, 0).String) = &quot;&quot; Then
+        oSettings.getCellByPosition(1, 0).String = &quot;BOM_DB&quot;
+    End If
+
+End Sub
+
+Sub WriteActiveBOMName(oDoc, BOMSheetName As String)
+
+    Dim oSettings
+
+    EnsureBOMConfigSheet oDoc
+    oSettings = oDoc.Sheets.getByName(&quot;BOM_Setting&quot;)
+    oSettings.getCellByPosition(0, 0).String = &quot;CurrentBOM&quot;
+    oSettings.getCellByPosition(1, 0).String = Trim(BOMSheetName)
+
+End Sub
+
+Function EnsureSheet(oDoc, SheetName As String)
+
+    Dim oSheet
+
+    If oDoc.Sheets.hasByName(SheetName) Then
+        EnsureSheet = oDoc.Sheets.getByName(SheetName)
+     Exit Function
+    End If
+
+    oDoc.Sheets.insertNewByName(SheetName, oDoc.Sheets.Count)
+    EnsureSheet = oDoc.Sheets.getByName(SheetName)
+
+End Function
+
+Sub NormalizeBOMFromCSVFile(oDoc, CsvPath As String, OutputSheetName As String, NormalizedFolder As String)
+
+    Dim oRawSheet
+    Dim oDstSheet
+    Dim ExportPath As String
+
+    oRawSheet = EnsureSheet(oDoc, &quot;BOM_Raw_Import&quot;)
+    oRawSheet.clearContents(1023)
+    ImportCSVToSheet CsvPath, oRawSheet
+
+    oDstSheet = EnsureSheet(oDoc, OutputSheetName)
+    NormalizeBOMSheet oRawSheet, oDstSheet
+
+    ExportPath = NormalizedFolder &amp; &quot;\&quot; &amp; StripCsvExtension(Dir$(CsvPath)) &amp; &quot;.csv&quot;
+    ExportSheetToCSV oDstSheet, ExportPath
+
+End Sub
+
+Sub ImportCSVToSheet(CsvPath As String, oSheet)
+
+    Dim oDesktop
+    Dim oCSVDoc
+    Dim oSourceSheet
+    Dim oCursor
+    Dim SourceRange
+    Dim SourceData
+    Dim LastRow As Long
+    Dim LastCol As Long
+    Dim ImportArgs(1) As New com.sun.star.beans.PropertyValue
+
+    ImportArgs(0).Name = &quot;FilterName&quot;
+    ImportArgs(0).Value = &quot;Text - txt - csv (StarCalc)&quot;
+    ImportArgs(1).Name = &quot;FilterOptions&quot;
+    ImportArgs(1).Value = &quot;44,34,76,1&quot;
+
+    oDesktop = CreateUnoService(&quot;com.sun.star.frame.Desktop&quot;)
+    oCSVDoc = oDesktop.loadComponentFromURL(ConvertToURL(CsvPath), &quot;_blank&quot;, 0, ImportArgs())
+    oSourceSheet = oCSVDoc.Sheets.getByIndex(0)
+
+    oCursor = oSourceSheet.createCursor()
+    oCursor.gotoEndOfUsedArea(True)
+    LastRow = oCursor.RangeAddress.EndRow
+    LastCol = oCursor.RangeAddress.EndColumn
+
+    SourceRange = oSourceSheet.getCellRangeByPosition(0, 0, LastCol, LastRow)
+    SourceData = SourceRange.getDataArray()
+    oSheet.getCellRangeByPosition(0, 0, LastCol, LastRow).setDataArray(SourceData)
+
+    oCSVDoc.close(True)
+
+End Sub
+
+Sub NormalizeBOMSheet(oSrc, oDst)
+
+    Dim oCursor
+    Dim SrcRow As Long
+    Dim DstRow As Long
+    Dim LastRow As Long
+    Dim HeaderRow As Long
+    Dim PartCol As Long
+    Dim DescCol As Long
+    Dim LocationCol As Long
+
+    Dim RefList As String
+    Dim RefArray
+    Dim Ref
+    Dim Layer As String
+    Dim PartDescription As String
+    Dim FGSFG As String
+
+    oCursor = oSrc.createCursor()
+    oCursor.gotoEndOfUsedArea(True)
+    LastRow = oCursor.RangeAddress.EndRow
+
+    oDst.clearContents(1023)
+    oDst.getCellByPosition(0, 0).String = &quot;位號&quot;
+    oDst.getCellByPosition(1, 0).String = &quot;版面&quot;
+    oDst.getCellByPosition(2, 0).String = &quot;零件描述&quot;
+    DstRow = 1
+
+    HeaderRow = -1
+    For SrcRow = 0 To LastRow
+        If UCase(Trim(oSrc.getCellByPosition(0, SrcRow).String)) = &quot;FG/SFG&quot; _
+            And UCase(Trim(oSrc.getCellByPosition(1, SrcRow).String)) = &quot;ITEM&quot; Then
+            HeaderRow = SrcRow
+         Exit For
+        End If
+    Next SrcRow
+
+    If HeaderRow &gt;= 0 Then
+        PartCol = FindHeaderColumn(oSrc, HeaderRow, &quot;Part No&quot;)
+        DescCol = FindHeaderColumn(oSrc, HeaderRow, &quot;Description&quot;)
+        LocationCol = FindHeaderColumn(oSrc, HeaderRow, &quot;Location&quot;)
+
+        If PartCol &lt; 0 Or DescCol &lt; 0 Or LocationCol &lt; 0 Then
+            MsgBox &quot;找不到 Part No、Description 或 Location 欄位。&quot;, 48
+         Exit Sub
+        End If
+
+        For SrcRow = HeaderRow + 1 To LastRow
+            FGSFG = CleanBOMText(oSrc.getCellByPosition(0, SrcRow).String)
+            If Trim(oSrc.getCellByPosition(PartCol, SrcRow).String) &lt;&gt; &quot;&quot; Then
+                PartDescription = CleanBOMText(oSrc.getCellByPosition(DescCol, SrcRow).String)
+                RefList = oSrc.getCellByPosition(LocationCol, SrcRow).String
+
+                RefList = Replace(RefList, Chr(13), &quot;&quot;)
+                RefList = Replace(RefList, Chr(10), &quot;&quot;)
+                RefList = Replace(RefList, Chr(9), &quot;&quot;)
+
+                If FGSFG &lt;&gt; &quot;&quot; And UCase(FGSFG) &lt;&gt; &quot;FG/SFG&quot; _
+                    And PartDescription &lt;&gt; &quot;&quot; And Trim(RefList) &lt;&gt; &quot;&quot; Then
+                    Layer = GetBOMLayer(FGSFG)
+                    RefArray = Split(RefList, &quot;,&quot;)
+
+                    For Each Ref In RefArray
+                        Ref = CleanBOMText(Ref)
+                        If Ref &lt;&gt; &quot;&quot; Then
+                            oDst.getCellByPosition(0, DstRow).String = Ref
+                            oDst.getCellByPosition(1, DstRow).String = Layer
+                            oDst.getCellByPosition(2, DstRow).String = PartDescription
+                            DstRow = DstRow + 1
+                        End If
+                    Next Ref
+                End If
+            End If
+        Next SrcRow
+    Else
+        For SrcRow = 1 To LastRow
+            RefList = oSrc.getCellByPosition(0, SrcRow).String
+            PartDescription = CleanBOMText(oSrc.getCellByPosition(2, SrcRow).String)
+            Layer = CleanBOMText(oSrc.getCellByPosition(1, SrcRow).String)
+
+            RefList = Replace(RefList, Chr(13), &quot;&quot;)
+            RefList = Replace(RefList, Chr(10), &quot;&quot;)
+            RefList = Replace(RefList, Chr(9), &quot;&quot;)
+
+            If Trim(RefList) &lt;&gt; &quot;&quot; And PartDescription &lt;&gt; &quot;&quot; Then
+                RefArray = Split(RefList, &quot;,&quot;)
+
+                For Each Ref In RefArray
+                    Ref = CleanBOMText(Ref)
+                    If Ref &lt;&gt; &quot;&quot; Then
+                        oDst.getCellByPosition(0, DstRow).String = Ref
+                        oDst.getCellByPosition(1, DstRow).String = Layer
+                        oDst.getCellByPosition(2, DstRow).String = PartDescription
+                        DstRow = DstRow + 1
+                    End If
+                Next Ref
+            End If
+        Next SrcRow
+    End If
+
+End Sub
+
+Sub ExportSheetToCSV(oSheet, OutputPath As String)
+
+    Dim oSFA
+    Dim oOutput
+    Dim oTextOutput
+    Dim RowNo As Long
+    Dim LastRow As Long
+    Dim oCursor
+    Dim RefDes As String
+    Dim Layer As String
+    Dim PartDescription As String
+
+    oSFA = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
+    oOutput = oSFA.openFileWrite(ConvertToURL(OutputPath))
+    oTextOutput = CreateUnoService(&quot;com.sun.star.io.TextOutputStream&quot;)
+    oTextOutput.setOutputStream(oOutput)
+    oTextOutput.setEncoding(&quot;UTF-8&quot;)
+
+    oCursor = oSheet.createCursor()
+    oCursor.gotoEndOfUsedArea(True)
+    LastRow = oCursor.RangeAddress.EndRow
+
+    For RowNo = 0 To LastRow
+        RefDes = oSheet.getCellByPosition(0, RowNo).String
+        Layer = oSheet.getCellByPosition(1, RowNo).String
+        PartDescription = oSheet.getCellByPosition(2, RowNo).String
+
+        If RefDes &lt;&gt; &quot;&quot; Or Layer &lt;&gt; &quot;&quot; Or PartDescription &lt;&gt; &quot;&quot; Then
+            oTextOutput.writeString(EscapeCSVField(RefDes) &amp; &quot;,&quot; &amp; _
+            EscapeCSVField(Layer) &amp; &quot;,&quot; &amp; EscapeCSVField(PartDescription) &amp; Chr(10))
+        End If
+    Next RowNo
+
+    oTextOutput.closeOutput()
+
+End Sub
+
+Function EscapeCSVField(Value As String) As String
+
+    Dim NeedsQuotes As Boolean
+
+    NeedsQuotes = InStr(Value, &quot;,&quot;) &gt; 0 Or InStr(Value, Chr(34)) &gt; 0 _
+    Or InStr(Value, Chr(10)) &gt; 0 Or InStr(Value, Chr(13)) &gt; 0
+
+    If InStr(Value, Chr(34)) &gt; 0 Then
+        Value = Replace(Value, Chr(34), Chr(34) &amp; Chr(34))
+    End If
+
+    If NeedsQuotes Then
+        EscapeCSVField = Chr(34) &amp; Value &amp; Chr(34)
+    Else
+        EscapeCSVField = Value
+    End If
+
+End Function
+
+Function FindHeaderColumn(oSheet, HeaderRow As Long, HeaderText As String) As Long
+
+    Dim Col As Long
+
+    FindHeaderColumn = -1
+    For Col = 0 To 127
+        If UCase(Trim(oSheet.getCellByPosition(Col, HeaderRow).String)) = UCase(HeaderText) Then
+            FindHeaderColumn = Col
+         Exit Function
+        End If
+    Next Col
+
+End Function
+
+Function CleanBOMText(Value As String) As String
+
+    Value = Replace(Value, Chr(13), &quot; &quot;)
+    Value = Replace(Value, Chr(10), &quot; &quot;)
+    Value = Replace(Value, Chr(9), &quot; &quot;)
+    Value = Trim(Value)
+
+    Do While InStr(Value, &quot;  &quot;) &gt; 0
+        Value = Replace(Value, &quot;  &quot;, &quot; &quot;)
+    Loop
+
+    CleanBOMText = Value
+
+End Function
+
+Function GetBOMLayer(FGSFG As String) As String
+
+    Dim BoardMarker As Long
+
+    If Left(UCase(FGSFG), 3) = &quot;PS-&quot; Then
+        GetBOMLayer = &quot;MB&quot;
+     Exit Function
+    End If
+
+    BoardMarker = InStr(1, UCase(FGSFG), &quot;-PS&quot;)
+    If BoardMarker &gt; 1 Then
+        GetBOMLayer = Left(FGSFG, BoardMarker - 1)
+    Elseif Left(UCase(FGSFG), 3) = &quot;S10&quot; Then
+        GetBOMLayer = &quot;S10&quot;
+    Elseif Left(UCase(FGSFG), 1) = &quot;S&quot; Then
+        BoardMarker = InStr(FGSFG, &quot;-&quot;)
+        If BoardMarker &gt; 1 Then
+            GetBOMLayer = Left(FGSFG, BoardMarker - 1)
+        Else
+            GetBOMLayer = &quot;MB&quot;
+        End If
+    Else
+        GetBOMLayer = &quot;MB&quot;
+    End If
+
+End Function
+</script:module>
