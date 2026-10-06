@@ -10,6 +10,7 @@ Sub NormalizeBOM()
     Dim RawFileName As String
     Dim CsvPath As String
     Dim OutputSheetName As String
+    Dim BOMModelName As String
 
     oDoc = ThisComponent
     RawFolder = GetBOMRawFolder(oDoc)
@@ -31,10 +32,11 @@ Sub NormalizeBOM()
          Exit Sub
         End If
 
-        OutputSheetName = &quot;BOM_DB_&quot; &amp; StripCsvExtension(RawFileName)
+        BOMModelName = StripCsvExtension(RawFileName)
+        OutputSheetName = &quot;BOM_Normalized_Import&quot;
         NormalizeBOMFromCSVFile oDoc, CsvPath, OutputSheetName, NormalizedFolder
-        WriteActiveBOMName oDoc, OutputSheetName
-        MsgBox &quot;完成：&quot; &amp; OutputSheetName &amp; Chr(10) &amp; &quot;已寫入 &quot; &amp; NormalizedFolder, 64
+        WriteActiveBOMName oDoc, BOMModelName
+        MsgBox &quot;完成：&quot; &amp; BOMModelName &amp; Chr(10) &amp; &quot;已寫入 &quot; &amp; NormalizedFolder, 64
 
 End Sub
 
@@ -136,7 +138,7 @@ Sub EnsureBOMConfigSheet(oDoc)
     End If
 
     If Trim(oSettings.getCellByPosition(1, 0).String) = &quot;&quot; Then
-        oSettings.getCellByPosition(1, 0).String = &quot;BOM_DB&quot;
+        oSettings.getCellByPosition(1, 0).String = &quot;&quot;
     End If
 
 End Sub
@@ -174,7 +176,7 @@ Sub NormalizeBOMFromCSVFile(oDoc, CsvPath As String, OutputSheetName As String, 
 
     oRawSheet = EnsureSheet(oDoc, &quot;BOM_Raw_Import&quot;)
     oRawSheet.clearContents(1023)
-    ImportCSVToSheet CsvPath, oRawSheet
+    ImportCSVToSheet oDoc, CsvPath, oRawSheet
 
     oDstSheet = EnsureSheet(oDoc, OutputSheetName)
     NormalizeBOMSheet oRawSheet, oDstSheet
@@ -184,7 +186,7 @@ Sub NormalizeBOMFromCSVFile(oDoc, CsvPath As String, OutputSheetName As String, 
 
 End Sub
 
-Sub ImportCSVToSheet(CsvPath As String, oSheet)
+Sub ImportCSVToSheet(oDoc, CsvPath As String, oSheet)
 
     Dim oDesktop
     Dim oCSVDoc
@@ -215,6 +217,7 @@ Sub ImportCSVToSheet(CsvPath As String, oSheet)
     oSheet.getCellRangeByPosition(0, 0, LastCol, LastRow).setDataArray(SourceData)
 
     oCSVDoc.close(True)
+    oDoc.CurrentController.Frame.activate()
 
 End Sub
 

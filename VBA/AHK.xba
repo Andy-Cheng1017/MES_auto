@@ -11,7 +11,7 @@ Sub ExportMESJobsJson()
     Dim fn As Integer
     Dim SavePath As String
 
-    SavePath = GetCurrentFolder() &amp; &quot;\MES_Jobs.json&quot;
+    SavePath = GetCurrentFolder() &amp; &quot;\History\MES_Jobs.json&quot;
 
     If FileExists(ConvertToURL(SavePath)) Then
         Kill SavePath
@@ -151,7 +151,7 @@ Sub ArchiveData()
         End If
 
         oSrcSheet = oDoc.Sheets.getByName(&quot;FA_Report&quot;)
-        HistoryURL = ConvertToURL(GetCurrentFolder() &amp; &quot;\History.ods&quot;)
+        HistoryURL = ConvertToURL(GetCurrentFolder() &amp; &quot;\History\History.ods&quot;)
 
         ErrorStage = &quot;開啟或建立 History.ods&quot;
         oSimpleFileAccess = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)

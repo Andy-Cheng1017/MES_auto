@@ -48,7 +48,7 @@ Main()
 
 LoadJobs()
 {
-    file := A_ScriptDir "\MES_Jobs.json"
+    file := A_ScriptDir "\..\History\MES_Jobs.json"
 
     if !FileExist(file)
         throw Error("JSON不存在")
@@ -65,7 +65,7 @@ InputSN(sn) {
     ctrl := Find_Wait_Control(
         MES_Win,
         "WindowsForms10.EDIT.app.0.",
-        "_r21_ad11"
+        "ad11"
     )
 
     if !ctrl

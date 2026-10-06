@@ -3,6 +3,10 @@
 <script:module xmlns:script="http://openoffice.org/2000/script" script:name="FA_FuntionKey" script:language="StarBasic" script:moduleType="normal">REM  *****  BASIC  *****
 
 Global gFillingSuggestion As Boolean
+Global gBOMCacheLoaded As Boolean
+Global gBOMCacheModel As String
+Global gBOMCacheModified As Date
+Global gBOMCacheLastRow As Long
 
 Sub Main()
     Dim oCell
@@ -89,15 +93,15 @@ Function LookupDB( _
 
 End Function
 
-Sub EnsureBOMSettingSheet()
+Sub EnsureBOMSettingSheet(oDoc)
 
     Dim oSettings
 
-    If Not ThisComponent.Sheets.hasByName(&quot;BOM_Setting&quot;) Then
-        ThisComponent.Sheets.insertNewByName(&quot;BOM_Setting&quot;, 0)
+    If Not oDoc.Sheets.hasByName(&quot;BOM_Setting&quot;) Then
+        oDoc.Sheets.insertNewByName(&quot;BOM_Setting&quot;, 0)
     End If
 
-    oSettings = ThisComponent.Sheets.getByName(&quot;BOM_Setting&quot;)
+    oSettings = oDoc.Sheets.getByName(&quot;BOM_Setting&quot;)
 
     If Trim(oSettings.getCellByPosition(0, 0).String) = &quot;&quot; Then
         oSettings.getCellByPosition(0, 0).String = &quot;CurrentBOM&quot;
@@ -109,89 +113,158 @@ Sub EnsureBOMSettingSheet()
 
 End Sub
 
-Function GetActiveBOMSheetName() As String
+Function GetActiveBOMModel(oDoc) As String
 
     Dim oSettings
-    Dim BOMName As String
+    Dim ModelName As String
 
-    EnsureBOMSettingSheet
-    oSettings = ThisComponent.Sheets.getByName(&quot;BOM_Setting&quot;)
-    BOMName = Trim(oSettings.getCellByPosition(1, 0).String)
+    EnsureBOMSettingSheet oDoc
+    oSettings = oDoc.Sheets.getByName(&quot;BOM_Setting&quot;)
+    ModelName = Trim(oSettings.getCellByPosition(1, 0).String)
 
-    If BOMName = &quot;&quot; Or Not ThisComponent.Sheets.hasByName(BOMName) Then
-        BOMName = SelectBOMByUser()
-        If Trim(BOMName) &lt;&gt; &quot;&quot; Then
-            SetActiveBOMSheetName BOMName
-        End If
+    If UCase(ModelName) = &quot;BOM_DB&quot; Then
+        ModelName = &quot;&quot;
+    ElseIf UCase(Left(ModelName, 7)) = &quot;BOM_DB_&quot; Then
+        ModelName = Mid(ModelName, 8)
     End If
 
-    GetActiveBOMSheetName = BOMName
+    If UCase(Right(ModelName, 4)) = &quot;.CSV&quot; Then
+        ModelName = Left(ModelName, Len(ModelName) - 4)
+    End If
+
+    If ModelName &lt;&gt; Trim(oSettings.getCellByPosition(1, 0).String) Then
+        SetActiveBOMModel oDoc, ModelName
+    End If
+
+    GetActiveBOMModel = ModelName
 
 End Function
 
-Sub SetActiveBOMSheetName(BOMSheetName As String)
+Sub SetActiveBOMModel(oDoc, ModelName As String)
 
     Dim oSettings
 
-    EnsureBOMSettingSheet
-    oSettings = ThisComponent.Sheets.getByName(&quot;BOM_Setting&quot;)
+    EnsureBOMSettingSheet oDoc
+    oSettings = oDoc.Sheets.getByName(&quot;BOM_Setting&quot;)
     oSettings.getCellByPosition(0, 0).String = &quot;CurrentBOM&quot;
-    oSettings.getCellByPosition(1, 0).String = Trim(BOMSheetName)
+    oSettings.getCellByPosition(1, 0).String = Trim(ModelName)
 
 End Sub
 
-Function SelectBOMByUser() As String
+Function GetFAWorkbookFolder(oDoc) As String
 
-    Dim i As Integer
-    Dim SheetName As String
-    Dim MenuText As String
-    Dim Choice As String
-    Dim SelectedIndex As Long
-    Dim BOMCount As Long
+    Dim Url As String
+    Dim LastSlash As Long
 
-    For i = 0 To ThisComponent.Sheets.Count - 1
-        SheetName = ThisComponent.Sheets.getByIndex(i).Name
-        If UCase(SheetName) &lt;&gt; &quot;BOM_SETTING&quot; _
-            And InStr(1, UCase(SheetName), &quot;BOM_DB&quot;) &gt; 0 Then
-            BOMCount = BOMCount + 1
-            MenuText = MenuText &amp; BOMCount &amp; &quot;. &quot; &amp; SheetName &amp; Chr(10)
+    If Trim(oDoc.URL) = &quot;&quot; Then
+        GetFAWorkbookFolder = CurDir
+        Exit Function
+    End If
+
+    Url = oDoc.URL
+    LastSlash = 0
+    Do While InStr(LastSlash + 1, Url, &quot;/&quot;) &gt; 0
+        LastSlash = InStr(LastSlash + 1, Url, &quot;/&quot;)
+    Loop
+
+    If LastSlash &gt; 0 Then
+        GetFAWorkbookFolder = ConvertFromURL(Left(Url, LastSlash))
+    Else
+        GetFAWorkbookFolder = CurDir
+    End If
+
+End Function
+
+Function LoadBOMCache(oDoc, ModelName As String) As Boolean
+
+    Dim oCache
+    Dim oDesktop
+    Dim oCSVDoc
+    Dim oSourceSheet
+    Dim oCursor
+    Dim SourceRange
+    Dim SourceData
+    Dim CsvPath As String
+    Dim Folder As String
+    Dim LastRow As Long
+    Dim LastCol As Long
+    Dim FileModified As Date
+    Dim ImportArgs(1) As New com.sun.star.beans.PropertyValue
+
+    Folder = GetFAWorkbookFolder(oDoc)
+    If Right(Folder, 1) = &quot;\&quot; Or Right(Folder, 1) = &quot;/&quot; Then
+        Folder = Left(Folder, Len(Folder) - 1)
+    End If
+    CsvPath = Folder &amp; &quot;\BOM_Normalized\&quot; &amp; ModelName &amp; &quot;.csv&quot;
+
+    If Dir$(CsvPath) = &quot;&quot; Then
+        MsgBox &quot;找不到機種 BOM CSV：&quot; &amp; Chr(10) &amp; CsvPath, 48
+        LoadBOMCache = False
+        Exit Function
+    End If
+
+    FileModified = FileDateTime(CsvPath)
+    If gBOMCacheLoaded And gBOMCacheModel = ModelName _
+        And gBOMCacheModified = FileModified _
+        And oDoc.Sheets.hasByName(&quot;BOM_Active_Cache&quot;) Then
+        LoadBOMCache = True
+        Exit Function
+    End If
+
+    On Error GoTo CacheLoadError
+    If oDoc.Sheets.hasByName(&quot;BOM_Active_Cache&quot;) Then
+        oCache = oDoc.Sheets.getByName(&quot;BOM_Active_Cache&quot;)
+    Else
+        oDoc.Sheets.insertNewByName(&quot;BOM_Active_Cache&quot;, oDoc.Sheets.Count)
+        oCache = oDoc.Sheets.getByName(&quot;BOM_Active_Cache&quot;)
+    End If
+    oCache.clearContents(1023)
+
+    ImportArgs(0).Name = &quot;FilterName&quot;
+    ImportArgs(0).Value = &quot;Text - txt - csv (StarCalc)&quot;
+    ImportArgs(1).Name = &quot;FilterOptions&quot;
+    ImportArgs(1).Value = &quot;44,34,76,1&quot;
+
+    oDesktop = CreateUnoService(&quot;com.sun.star.frame.Desktop&quot;)
+    oCSVDoc = oDesktop.loadComponentFromURL(ConvertToURL(CsvPath), &quot;_blank&quot;, 0, ImportArgs())
+    oSourceSheet = oCSVDoc.Sheets.getByIndex(0)
+    oCursor = oSourceSheet.createCursor()
+    oCursor.gotoEndOfUsedArea(True)
+    LastRow = oCursor.RangeAddress.EndRow
+    LastCol = oCursor.RangeAddress.EndColumn
+    SourceRange = oSourceSheet.getCellRangeByPosition(0, 0, LastCol, LastRow)
+    SourceData = SourceRange.getDataArray()
+    oCache.getCellRangeByPosition(0, 0, LastCol, LastRow).setDataArray(SourceData)
+    oCSVDoc.close(True)
+    oDoc.CurrentController.Frame.activate()
+
+    oCache.IsVisible = False
+    gBOMCacheModel = ModelName
+    gBOMCacheModified = FileModified
+    gBOMCacheLastRow = LastRow
+    gBOMCacheLoaded = True
+    LoadBOMCache = True
+    Exit Function
+
+CacheLoadError:
+    gBOMCacheLoaded = False
+    MsgBox &quot;載入 BOM 失敗：&quot; &amp; Err.Description, 48
+    LoadBOMCache = False
+
+End Function
+
+Function LookupBOMCache(oCache, RefDes As String, ReturnCol As Integer) As String
+
+    Dim RowNo As Long
+
+    For RowNo = 1 To gBOMCacheLastRow
+        If UCase(Trim(oCache.getCellByPosition(0, RowNo).String)) = UCase(RefDes) Then
+            LookupBOMCache = oCache.getCellByPosition(ReturnCol, RowNo).String
+            Exit Function
         End If
-    Next i
+    Next RowNo
 
-    If BOMCount = 0 Then
-        MsgBox &quot;找不到 BOM 工作表，請先匯入或建立 BOM。&quot;, 48
-        SelectBOMByUser = &quot;&quot;
-     Exit Function
-    End If
-
-    Choice = InputBox(&quot;請選擇目前使用的 BOM：&quot; &amp; Chr(10) &amp; Chr(10) &amp; MenuText, _
-    &quot;BOM 選擇&quot;, &quot;1&quot;)
-    If Trim(Choice) = &quot;&quot; Or Not IsNumeric(Choice) Then
-        SelectBOMByUser = &quot;&quot;
-     Exit Function
-    End If
-
-    SelectedIndex = CLng(Choice)
-    If SelectedIndex &lt; 1 Or SelectedIndex &gt; BOMCount Then
-        MsgBox &quot;選項編號無效，請重新選擇 BOM。&quot;, 48
-        SelectBOMByUser = &quot;&quot;
-     Exit Function
-    End If
-
-    BOMCount = 0
-    For i = 0 To ThisComponent.Sheets.Count - 1
-        SheetName = ThisComponent.Sheets.getByIndex(i).Name
-        If UCase(SheetName) &lt;&gt; &quot;BOM_SETTING&quot; _
-            And InStr(1, UCase(SheetName), &quot;BOM_DB&quot;) &gt; 0 Then
-            BOMCount = BOMCount + 1
-            If BOMCount = SelectedIndex Then
-                SelectBOMByUser = SheetName
-             Exit Function
-            End If
-        End If
-    Next i
-
-    SelectBOMByUser = &quot;&quot;
+    LookupBOMCache = &quot;&quot;
 
 End Function
 
@@ -267,37 +340,45 @@ Sub ConvertColumn_1( _
 End Sub
 
 Sub LookupBOM()
-
+    Dim oDoc
     Dim oSheet
     Dim oCell
+    Dim oCache
+    Dim RefDes As String
+    Dim Board As String
+    Dim Desc As String
+    Dim ModelName As String
 
-    Dim RefDes
-    Dim Board
-    Dim Desc
-    Dim ActiveBOM As String
-
-    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
-    oCell = ThisComponent.CurrentSelection
+    oDoc = ThisComponent
+    oSheet = oDoc.Sheets.getByName(&quot;FA_Report&quot;)
+    oCell = oDoc.CurrentSelection
 
     If Not oCell.supportsService(&quot;com.sun.star.sheet.SheetCell&quot;) Then Exit Sub
 
-        RefDes = UCase(Trim(oCell.String))
-        If RefDes = &quot;&quot; Then Exit Sub
+    RefDes = UCase(Trim(oCell.String))
+    If RefDes = &quot;&quot; Then Exit Sub
 
-            ActiveBOM = GetActiveBOMSheetName()
-            If Trim(ActiveBOM) = &quot;&quot; Then Exit Sub
-                If Not ThisComponent.Sheets.hasByName(ActiveBOM) Then
-                    MsgBox &quot;目前選用的 BOM 工作表不存在：&quot; &amp; ActiveBOM, 48
-                 Exit Sub
-                End If
+    ModelName = GetActiveBOMModel(oDoc)
+    If ModelName = &quot;&quot; Then
+        MsgBox &quot;請先在 BOM_Setting 工作表的 B1 設定機種名稱，例如 PS_2442。&quot;, 48
+        Exit Sub
+    End If
 
-                Board = LookupDB(ActiveBOM, RefDes, 1)
-                Desc = LookupDB(ActiveBOM, RefDes, 2)
+    If Not LoadBOMCache(oDoc, ModelName) Then Exit Sub
 
-                If Board &lt;&gt; &quot;&quot; Then
-                    oSheet.getCellByPosition(6, oCell.CellAddress.Row).String = Board
-                    oSheet.getCellByPosition(7, oCell.CellAddress.Row).String = Desc
-                End If
+    oCache = oDoc.Sheets.getByName(&quot;BOM_Active_Cache&quot;)
+    Board = LookupBOMCache(oCache, RefDes, 1)
+    Desc = LookupBOMCache(oCache, RefDes, 2)
+
+    If Board &lt;&gt; &quot;&quot; Then
+        oSheet.getCellByPosition(6, oCell.CellAddress.Row).String = Board
+        oSheet.getCellByPosition(7, oCell.CellAddress.Row).String = Desc
+    End If
+
+    If Board &lt;&gt; &quot;&quot; Then
+        oSheet.getCellByPosition(6, oCell.CellAddress.Row).String = Board
+        oSheet.getCellByPosition(7, oCell.CellAddress.Row).String = Desc
+    End If
 
 End Sub
 

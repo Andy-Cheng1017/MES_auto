@@ -64,7 +64,7 @@ Main()
 
 LoadJobs()
 {
-    file := A_ScriptDir "\MES_Jobs.json"
+    file := A_ScriptDir "\..\History\MES_Jobs.json"
 
     if !FileExist(file)
         throw Error("JSON不存在")
