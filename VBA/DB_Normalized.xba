@@ -249,26 +249,33 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     oDst.getCellByPosition(2, 0).String = &quot;零件描述&quot;
     DstRow = 1
 
-    HeaderRow = -1
+    PartCol = 6
+    DescCol = 8
+    LocationCol = 12
+
     For SrcRow = 0 To LastRow
         If UCase(Trim(oSrc.getCellByPosition(0, SrcRow).String)) = &quot;FG/SFG&quot; _
             And UCase(Trim(oSrc.getCellByPosition(1, SrcRow).String)) = &quot;ITEM&quot; Then
-            HeaderRow = SrcRow
-         Exit For
-        End If
-    Next SrcRow
+            PartCol = FindHeaderColumn(oSrc, SrcRow, &quot;Part No&quot;)
+            DescCol = FindHeaderColumn(oSrc, SrcRow, &quot;Description&quot;)
+            LocationCol = FindHeaderColumn(oSrc, SrcRow, &quot;Location&quot;)
 
-    If HeaderRow &gt;= 0 Then
-        PartCol = FindHeaderColumn(oSrc, HeaderRow, &quot;Part No&quot;)
-        DescCol = FindHeaderColumn(oSrc, HeaderRow, &quot;Description&quot;)
-        LocationCol = FindHeaderColumn(oSrc, HeaderRow, &quot;Location&quot;)
+            If PartCol &lt; 0 Or DescCol &lt; 0 Or LocationCol &lt; 0 Then
+                MsgBox &quot;找不到 Part No、Description 或 Location 欄位。&quot;, 48
+             Exit Sub
+            End If
+        ElseIf UCase(Trim(oSrc.getCellByPosition(0, SrcRow).String)) &lt;&gt; &quot;COLUMN1&quot; Then
+            If UCase(Trim(oSrc.getCellByPosition(13, SrcRow).String)) = &quot;PC&quot; Then
+                PartCol = 5
+                DescCol = 7
+                LocationCol = 11
+            ElseIf UCase(Trim(oSrc.getCellByPosition(14, SrcRow).String)) = &quot;PC&quot; _
+                Or UCase(Trim(oSrc.getCellByPosition(15, SrcRow).String)) = &quot;PC&quot; Then
+                PartCol = 6
+                DescCol = 8
+                LocationCol = 12
+            End If
 
-        If PartCol &lt; 0 Or DescCol &lt; 0 Or LocationCol &lt; 0 Then
-            MsgBox &quot;找不到 Part No、Description 或 Location 欄位。&quot;, 48
-         Exit Sub
-        End If
-
-        For SrcRow = HeaderRow + 1 To LastRow
             FGSFG = CleanBOMText(oSrc.getCellByPosition(0, SrcRow).String)
             If Trim(oSrc.getCellByPosition(PartCol, SrcRow).String) &lt;&gt; &quot;&quot; Then
                 PartDescription = CleanBOMText(oSrc.getCellByPosition(DescCol, SrcRow).String)
@@ -294,32 +301,8 @@ Sub NormalizeBOMSheet(oSrc, oDst)
                     Next Ref
                 End If
             End If
-        Next SrcRow
-    Else
-        For SrcRow = 1 To LastRow
-            RefList = oSrc.getCellByPosition(0, SrcRow).String
-            PartDescription = CleanBOMText(oSrc.getCellByPosition(2, SrcRow).String)
-            Layer = CleanBOMText(oSrc.getCellByPosition(1, SrcRow).String)
-
-            RefList = Replace(RefList, Chr(13), &quot;&quot;)
-            RefList = Replace(RefList, Chr(10), &quot;&quot;)
-            RefList = Replace(RefList, Chr(9), &quot;&quot;)
-
-            If Trim(RefList) &lt;&gt; &quot;&quot; And PartDescription &lt;&gt; &quot;&quot; Then
-                RefArray = Split(RefList, &quot;,&quot;)
-
-                For Each Ref In RefArray
-                    Ref = CleanBOMText(Ref)
-                    If Ref &lt;&gt; &quot;&quot; Then
-                        oDst.getCellByPosition(0, DstRow).String = Ref
-                        oDst.getCellByPosition(1, DstRow).String = Layer
-                        oDst.getCellByPosition(2, DstRow).String = PartDescription
-                        DstRow = DstRow + 1
-                    End If
-                Next Ref
-            End If
-        Next SrcRow
-    End If
+        End If
+    Next SrcRow
 
 End Sub
 
