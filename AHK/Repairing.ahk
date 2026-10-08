@@ -29,12 +29,20 @@ Main()
 
 Main()
 {
+    global MES_Win
+
     jobs := LoadJobs()
 
     Log("========== START ==========")
     Log("Total Jobs = " jobs.Length)
 
     MsgBox "讀取完成"
+
+    if !WinActive(MES_Win)
+    {
+        MsgBox "MES 視窗未作用中，已停止作業"
+        return
+    }
 
     for job in jobs
     {
@@ -55,6 +63,8 @@ Main()
                 " FAILED : "
                 err.Message
             )
+            MsgBox "作業失敗，批次已停止。請先確認 MES 中此筆資料狀態。`nSN: " job["SN"] "`n" err.Message
+            break
         }
     }
 
@@ -173,16 +183,12 @@ InputSN(sn)
 
 SaveMES(job)
 {
+    global MES_Win, SaveButton, SaveButton_2, FNT2, FNT7
+
     CoordMode("Pixel", "Screen")
     CoordMode("Mouse", "Screen")
 
-    if (ok := FindText(&X, &Y, 353 - 3000, 81 - 3000, 353 + 3000, 81 + 3000, 0, 0,
-        SaveButton))
-    {
-        FindText().Click(X, Y, "L")
-    } else {
-        MsgBox "找不到SaveButton"
-    }
+    ClickImage(SaveButton, 353 - 3000, 81 - 3000, 353 + 3000, 81 + 3000, "Save")
 
     if (job["RepairCode"] == "*CIPS-PE-004*") {
         ctrl := Find_Wait_Control(MES_Win, "WindowsForms10.BUTTON.app.0.", "_ad15")
@@ -194,18 +200,12 @@ SaveMES(job)
         ControlClick ctrl, MES_Win
         Sleep 100
         Send "{Enter}"
-        Sleep 500
-        WinActivate("Scrap SN")
+        if !WinWaitActive("Scrap SN",, 3)
+            throw Error("等待報廢視窗 Scrap SN 逾時")
+
         ctrl := Find_Wait_Control("Scrap SN", "WindowsForms10.EDIT.app.0.", "_ad11")
-        SetText_Retry job["RootCause"], ctrl, MES_Win
-        ; MsgBox ControlGetText(ctrl, "Scrap SN")
-        if (ok := FindText(&X, &Y, 785 - 3000, 396 - 3000, 785 + 3000, 396 + 3000, 0, 0,
-            SaveButton_2)) {
-            MsgBox "找到SaveButton"
-            FindText().Click(X, Y, "L")
-        }
-        else
-            MsgBox "找不到SaveButton"
+        SetText_Retry job["RootCause"], ctrl, "Scrap SN"
+        ClickImage(SaveButton_2, 785 - 3000, 396 - 3000, 785 + 3000, 396 + 3000, "報廢儲存")
     } else {
         ctrl := Find_Wait_Control(MES_Win, "WindowsForms10.BUTTON.app.0.", "_ad16")
         ControlFocus ctrl, MES_Win
@@ -213,29 +213,36 @@ SaveMES(job)
         Sleep 800
 
         if (job["ReturnStation"] == "FNT2") {
-            if (ok := FindText(&X, &Y, 587 - 3000, 343 - 3000, 587 + 3000, 343 + 3000, 0, 0, FNT2))
-                FindText().Click(X, Y, "L")
-            else
-                MsgBox "找不到FNT2"
+            ClickImage(FNT2, 587 - 3000, 343 - 3000, 587 + 3000, 343 + 3000, "FNT2")
         } else if (job["ReturnStation"] == "FNT7") {
-            if (ok := FindText(&X, &Y, 589 - 150000, 390 - 150000, 589 + 150000, 390 + 150000, 0, 0,
-                FNT7))
-                FindText().Click(X, Y, "L")
-            else
-                MsgBox "找不到FNT7"
+            ClickImage(FNT7, 589 - 150000, 390 - 150000, 589 + 150000, 390 + 150000, "FNT7")
         } else {
-            MsgBox "ReturnStation錯誤"
+            throw Error("不支援的返站站別: " job["ReturnStation"])
         }
 
 
         ; MsgBox "完成"
 
-        if (ok := FindText(&X, &Y, 568 - 3000, 216 - 3000, 568 + 3000, 216 + 3000, 0, 0,
-            SaveButton_2))
-            FindText().Click(X, Y, "L")
-        else
-            MsgBox "找不到SaveButton"
+        ClickImage(SaveButton_2, 568 - 3000, 216 - 3000, 568 + 3000, 216 + 3000, "返站儲存")
     }
+}
+
+ClickImage(pattern, x1, y1, x2, y2, label, timeoutMs := 5000)
+{
+    started := A_TickCount
+
+    while (A_TickCount - started < timeoutMs)
+    {
+        if FindText(&x, &y, x1, y1, x2, y2, 0, 0, pattern)
+        {
+            FindText().Click(x, y, "L")
+            return true
+        }
+
+        Sleep 200
+    }
+
+    throw Error("找不到 " label " 按鈕/畫面，等待 " timeoutMs " ms 後逾時")
 }
 
 Log(text)
@@ -289,7 +296,11 @@ Find_Wait_Control(win, patterns*)
 
     while (A_TickCount - startTime < 3000)
     {
-        for ctrl in WinGetControls(win)
+        try controls := WinGetControls(win)
+        catch
+            controls := []
+
+        for ctrl in controls
         {
             found := true
 
@@ -309,7 +320,7 @@ Find_Wait_Control(win, patterns*)
         Sleep 100
     }
 
-    MsgBox ("WaitControl Timeout: " . StrJoin(patterns, ", "))
+    throw Error("等待控制項逾時: " win " / " StrJoin(patterns, ", "))
 }
 StrJoin(arr, sep := ", ")
 {
@@ -328,28 +339,28 @@ StrJoin(arr, sep := ", ")
 
 SetText_Retry(value, ctrl, winTitle, retryCount := 3)
 {
+    lastError := ""
+
     Loop retryCount
     {
-        ControlFocus(ctrl, winTitle)
+        try
+        {
+            ControlFocus(ctrl, winTitle)
+            Sleep 100
+            ControlSetText(value, ctrl, winTitle)
+            Sleep 100
+            currentText := ControlGetText(ctrl, winTitle)
 
-        Sleep 100
+            if (Trim(currentText) = Trim(value))
+                return true
 
-        ControlSetText(value, ctrl, winTitle)
+            lastError := "讀回文字與預期不符"
+        }
+        catch Error as err
+            lastError := err.Message
 
-        Sleep 100
-
-        try currentText := ControlGetText(
-            ctrl,
-            winTitle
-        )
-        catch
-            currentText := ""
-
-        if (Trim(currentText) = Trim(value))
-            return true
-
-        Sleep 500
+        Sleep 300
     }
 
-    return false
+    throw Error("無法設定控制項 " ctrl " (" winTitle ")，重試 " retryCount " 次。" lastError)
 }

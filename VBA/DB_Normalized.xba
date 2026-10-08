@@ -227,14 +227,16 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     Dim SrcRow As Long
     Dim DstRow As Long
     Dim LastRow As Long
+    Dim LastCol As Long
     Dim HeaderRow As Long
+    Dim FGCol As Long
+    Dim ItemCol As Long
+    Dim HeaderFound As Boolean
     Dim PartCol As Long
     Dim DescCol As Long
     Dim LocationCol As Long
 
     Dim RefList As String
-    Dim RefArray
-    Dim Ref
     Dim Layer As String
     Dim PartDescription As String
     Dim FGSFG As String
@@ -242,6 +244,7 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     oCursor = oSrc.createCursor()
     oCursor.gotoEndOfUsedArea(True)
     LastRow = oCursor.RangeAddress.EndRow
+    LastCol = oCursor.RangeAddress.EndColumn
 
     oDst.clearContents(1023)
     oDst.getCellByPosition(0, 0).String = &quot;位號&quot;
@@ -249,60 +252,94 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     oDst.getCellByPosition(2, 0).String = &quot;零件描述&quot;
     DstRow = 1
 
-    PartCol = 6
-    DescCol = 8
-    LocationCol = 12
-
     For SrcRow = 0 To LastRow
-        If UCase(Trim(oSrc.getCellByPosition(0, SrcRow).String)) = &quot;FG/SFG&quot; _
-            And UCase(Trim(oSrc.getCellByPosition(1, SrcRow).String)) = &quot;ITEM&quot; Then
+        FGCol = FindHeaderColumn(oSrc, SrcRow, &quot;FG/SFG&quot;)
+        ItemCol = FindHeaderColumn(oSrc, SrcRow, &quot;Item&quot;)
+        If FGCol &gt;= 0 And ItemCol &gt;= 0 Then
+            HeaderFound = True
+            HeaderRow = SrcRow
+            Exit For
+        End If
+    Next SrcRow
+
+    If Not HeaderFound Then
+        MsgBox &quot;找不到 BOM 主表表頭（FG/SFG、Item），正規化已中止。&quot;, 16
+        Error 5
+    End If
+
+    For SrcRow = HeaderRow To LastRow
+        If FindHeaderColumn(oSrc, SrcRow, &quot;FG/SFG&quot;) &gt;= 0 _
+            And FindHeaderColumn(oSrc, SrcRow, &quot;Item&quot;) &gt;= 0 Then
+            WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription
+            RefList = &quot;&quot;
+            FGCol = FindHeaderColumn(oSrc, SrcRow, &quot;FG/SFG&quot;)
             PartCol = FindHeaderColumn(oSrc, SrcRow, &quot;Part No&quot;)
             DescCol = FindHeaderColumn(oSrc, SrcRow, &quot;Description&quot;)
             LocationCol = FindHeaderColumn(oSrc, SrcRow, &quot;Location&quot;)
 
             If PartCol &lt; 0 Or DescCol &lt; 0 Or LocationCol &lt; 0 Then
-                MsgBox &quot;找不到 Part No、Description 或 Location 欄位。&quot;, 48
-             Exit Sub
+                MsgBox &quot;找不到 Part No、Description 或 Location 欄位，正規化已中止。&quot;, 16
+                Error 5
             End If
-        ElseIf UCase(Trim(oSrc.getCellByPosition(0, SrcRow).String)) &lt;&gt; &quot;COLUMN1&quot; Then
-            If UCase(Trim(oSrc.getCellByPosition(13, SrcRow).String)) = &quot;PC&quot; Then
-                PartCol = 5
-                DescCol = 7
-                LocationCol = 11
-            ElseIf UCase(Trim(oSrc.getCellByPosition(14, SrcRow).String)) = &quot;PC&quot; _
-                Or UCase(Trim(oSrc.getCellByPosition(15, SrcRow).String)) = &quot;PC&quot; Then
-                PartCol = 6
-                DescCol = 8
-                LocationCol = 12
+        ElseIf IsBOMLocationContinuation(oSrc, SrcRow, LocationCol, LastCol) Then
+            If RefList = &quot;&quot; Then
+                MsgBox &quot;位號續接列缺少來源資料，列號：&quot; &amp; (SrcRow + 1), 16
+                Error 5
             End If
-
-            FGSFG = CleanBOMText(oSrc.getCellByPosition(0, SrcRow).String)
+            RefList = RefList &amp; oSrc.getCellByPosition(LocationCol, SrcRow).String
+        Else
+            WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription
+            RefList = &quot;&quot;
+            PartDescription = &quot;&quot;
+            FGSFG = CleanBOMText(oSrc.getCellByPosition(FGCol, SrcRow).String)
             If Trim(oSrc.getCellByPosition(PartCol, SrcRow).String) &lt;&gt; &quot;&quot; Then
                 PartDescription = CleanBOMText(oSrc.getCellByPosition(DescCol, SrcRow).String)
-                RefList = oSrc.getCellByPosition(LocationCol, SrcRow).String
-
-                RefList = Replace(RefList, Chr(13), &quot;&quot;)
-                RefList = Replace(RefList, Chr(10), &quot;&quot;)
-                RefList = Replace(RefList, Chr(9), &quot;&quot;)
-
                 If FGSFG &lt;&gt; &quot;&quot; And UCase(FGSFG) &lt;&gt; &quot;FG/SFG&quot; _
-                    And PartDescription &lt;&gt; &quot;&quot; And Trim(RefList) &lt;&gt; &quot;&quot; Then
+                    And PartDescription &lt;&gt; &quot;&quot; Then
                     Layer = GetBOMLayer(FGSFG)
-                    RefArray = Split(RefList, &quot;,&quot;)
-
-                    For Each Ref In RefArray
-                        Ref = CleanBOMText(Ref)
-                        If Ref &lt;&gt; &quot;&quot; Then
-                            oDst.getCellByPosition(0, DstRow).String = Ref
-                            oDst.getCellByPosition(1, DstRow).String = Layer
-                            oDst.getCellByPosition(2, DstRow).String = PartDescription
-                            DstRow = DstRow + 1
-                        End If
-                    Next Ref
+                    RefList = oSrc.getCellByPosition(LocationCol, SrcRow).String
                 End If
             End If
         End If
     Next SrcRow
+    WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription
+
+End Sub
+
+Function IsBOMLocationContinuation(oSheet, RowNo As Long, LocationCol As Long, LastCol As Long) As Boolean
+
+    Dim Col As Long
+
+    IsBOMLocationContinuation = False
+    If Trim(oSheet.getCellByPosition(LocationCol, RowNo).String) = &quot;&quot; Then Exit Function
+    For Col = 0 To LastCol
+        If Col &lt;&gt; LocationCol Then
+            If Trim(oSheet.getCellByPosition(Col, RowNo).String) &lt;&gt; &quot;&quot; Then Exit Function
+        End If
+    Next Col
+    IsBOMLocationContinuation = True
+
+End Function
+
+Sub WriteBOMEntry(oDst, ByRef DstRow As Long, RefList As String, Layer As String, PartDescription As String)
+
+    Dim RefArray
+    Dim Ref
+    Dim Locations As String
+
+    Locations = Replace(RefList, Chr(13), &quot;&quot;)
+    Locations = Replace(Locations, Chr(10), &quot;&quot;)
+    Locations = Replace(Locations, Chr(9), &quot;&quot;)
+    RefArray = Split(Locations, &quot;,&quot;)
+    For Each Ref In RefArray
+        Ref = CleanBOMText(Ref)
+        If Ref &lt;&gt; &quot;&quot; Then
+            oDst.getCellByPosition(0, DstRow).String = Ref
+            oDst.getCellByPosition(1, DstRow).String = Layer
+            oDst.getCellByPosition(2, DstRow).String = PartDescription
+            DstRow = DstRow + 1
+        End If
+    Next Ref
 
 End Sub
 
@@ -319,6 +356,9 @@ Sub ExportSheetToCSV(oSheet, OutputPath As String)
     Dim PartDescription As String
 
     oSFA = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
+    If oSFA.exists(ConvertToURL(OutputPath)) Then
+        oSFA.kill(ConvertToURL(OutputPath))
+    End If
     oOutput = oSFA.openFileWrite(ConvertToURL(OutputPath))
     oTextOutput = CreateUnoService(&quot;com.sun.star.io.TextOutputStream&quot;)
     oTextOutput.setOutputStream(oOutput)
@@ -365,10 +405,14 @@ End Function
 Function FindHeaderColumn(oSheet, HeaderRow As Long, HeaderText As String) As Long
 
     Dim Col As Long
+    Dim HeaderData
+    Dim HeaderCells
 
+    HeaderData = oSheet.getCellRangeByPosition(0, HeaderRow, 127, HeaderRow).getDataArray()
+    HeaderCells = HeaderData(0)
     FindHeaderColumn = -1
     For Col = 0 To 127
-        If UCase(Trim(oSheet.getCellByPosition(Col, HeaderRow).String)) = UCase(HeaderText) Then
+        If UCase(CleanBOMText(CStr(HeaderCells(Col)))) = UCase(HeaderText) Then
             FindHeaderColumn = Col
          Exit Function
         End If

@@ -95,7 +95,7 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 4. 巨集會匯入至 `BOM_Raw_Import`、整理至 `BOM_Normalized_Import`，並輸出 `BOM_Normalized/<機種>.csv`；同名輸出檔會被覆寫。它也會更新 `BOM_Setting` 的 B1。
 5. 開啟輸出檔確認標題為 `位號,版面,零件描述`，檢查筆數及代表性位號/描述，再用於作業。
 
-標準化巨集會依來源格式找 `Part No`、`Description`、`Location` 標題，或依特定欄位位置與 `PC` 標記判斷格式。來源版型若改變，可能無法正確辨識；出現欄位錯誤或輸出異常時應停止使用，先檢查原始 CSV，不要把錯誤 BOM 用於 MES。
+標準化巨集依 `FG/SFG`、`Item` 主表表頭及 `Part No`、`Description`、`Location` 標題定位欄位，不使用固定欄位位置或 `PC` 標記；中間插入空欄不會改變對應。只有 Location 有內容的續接列會接到上一筆位號清單，再移除 CR/LF/Tab 並按逗號拆分；空 Location 的備用料不輸出。缺少必要表頭或續接列沒有來源資料時會中止，不匯出新 CSV。出現欄位錯誤或輸出異常時應停止使用，先檢查原始 CSV，不要把錯誤 BOM 用於 MES。
 
 ### 6. JSON 與 MES AHK 腳本
 
@@ -114,8 +114,8 @@ AHK 腳本依賴 `History/MES_Jobs.json`，且預期資料夾結構維持原樣�
 #### `Repairing.ahk`
 
 - 用途：逐筆輸入序號、故障/責任/維修資訊、位號及描述，再執行儲存與返站或報廢流程。
-- 執行前先開啟 MES，登入並切至正確的維修畫面；確認沒有未處理的對話框。此腳本沒有先確認 MES 視窗作用中的保護檢查。
-- 一般維修返站目前只辨識 `FNT2` 和 `FNT7`。其他站別會出現錯誤提示，需停止並由操作人員處理。
+- 執行前先開啟 MES，登入並切至正確的維修畫面；確認沒有未處理的對話框。按下「讀取完成」後，腳本會檢查 MES 是否仍為作用中視窗，否則停止。
+- 一般維修返站目前只辨識 `FNT2` 和 `FNT7`。控制項、文字輸入、畫面按鈕或站別處理失敗時，腳本會顯示錯誤並停止後續批次；先確認 MES 中該筆交易狀態，再由操作人員處理。檔案日誌預設關閉；要寫入 `MES_Log.txt`，需將 `LogEnabled` 設為 `true`。
 - `RepairCode` 為 `*CIPS-PE-004*` 時會走特殊報廢對話框流程；執行前必須確認報廢資料及原因符合核准程序。
 - 特定故障碼 `CP6008`、`CP6001`、`CP6045`、`CP6078` 會略過責任代碼欄位輸入。程式產生的維修描述格式為 `Layer/Location/Symptom, RootCause, RepairAction`，有小板號時另加小板序號。
 - 儲存及返站按鈕部分依賴畫面辨識。螢幕解析度、縮放比例、MES 版面或按鈕外觀變更可能導致辨識失敗。
@@ -143,7 +143,7 @@ AHK 腳本依賴 `History/MES_Jobs.json`，且預期資料夾結構維持原樣�
 | AHK 顯示找不到欄位/控制項 | 確認使用 AutoHotkey v2、MES 已登入且在預期畫面；MES 更新可能改變控制項名稱，需由維護者更新腳本。 |
 | 儲存按鈕或返站站別辨識失敗 | 確認解析度/縮放比例及 MES 視窗版面；停止批次並檢查該筆交易狀態。 |
 | BOM 查不到零件 | 確認 `BOM_Setting!B1` 的機種名稱與 `BOM_Normalized/<機種>.csv` 完全相符，並確認位號存在。 |
-| BOM 標準化輸出錯誤 | 確認原始 CSV 格式、`Part No`/`Description`/`Location` 標題或支援的 `PC` 欄位版型；保留原始檔並停止使用錯誤輸出。 |
+| BOM 標準化輸出錯誤 | 確認原始 CSV 的 `FG/SFG`、`Item`、`Part No`、`Description`、`Location` 標題及 Location 續接列；保留原始檔並停止使用錯誤輸出。 |
 | 輸入輔助沒有反應 | 確認已安裝全域 `VBA` 函式庫、已重新開啟 Calc、巨集允許執行，且正在編輯 `FA_Report`。 |
 | 照片功能找不到/搬錯照片 | 停止使用；目前功能依賴建立者個人 OneDrive 固定路徑，且會移動最新 JPG。 |
 | 歸檔後報表被清空 | `ArchiveData` 成功儲存歷史檔後會清除資料列；檢查 `History/History.ods`。若要單獨清除，`ClearFAReport` 不會先替你歸檔。 |
@@ -244,7 +244,7 @@ The current raw BOM files are `BM_2802.csv`, `MF_2442.csv`, `PS_2442.csv`, and `
 4. The macro imports the source into `BOM_Raw_Import`, transforms it into `BOM_Normalized_Import`, and writes `BOM_Normalized/<model>.csv`. An existing output with the same name is overwritten. It also updates `BOM_Setting` cell B1.
 5. Open the output and confirm the headers are `位號,版面,零件描述`; check the row count and representative references/descriptions before using it.
 
-The normalizer looks for source headers `Part No`, `Description`, and `Location`, or uses specific column positions and a `PC` marker for supported legacy layouts. If the source layout changes, the macro may not identify the data correctly. Stop and inspect the raw CSV if fields or output look wrong; do not use an incorrect BOM in MES.
+The normalizer maps columns using the `FG/SFG`, `Item`, `Part No`, `Description`, and `Location` headers, not fixed column positions or a `PC` marker. Inserted blank columns do not change the mapping. Rows containing only Location text are appended to the preceding location list before CR/LF/Tab removal and comma splitting. Alternate parts with empty Location are omitted. Missing required headers or orphan continuation rows stop processing before CSV export. Stop and inspect the raw CSV if fields or output look wrong; do not use an incorrect BOM in MES.
 
 ### 6. JSON and MES AHK Scripts
 
@@ -292,7 +292,7 @@ Both scripts currently set `LogEnabled` to `false`, so they do not create logs b
 | AHK cannot find a field/control | Confirm AutoHotkey v2, MES sign-in, and the expected screen. An MES update may change control names; the maintainer may need to update the script. |
 | Save button or return station not recognized | Check screen resolution/scaling and MES layout. Stop the batch and check the affected transaction status. |
 | BOM lookup returns no part | Confirm `BOM_Setting!B1` exactly matches `BOM_Normalized/<model>.csv` and that the reference exists. |
-| BOM normalization output is wrong | Check the raw CSV layout, the `Part No`/`Description`/`Location` headers, or the supported `PC`-marker layout. Keep the source and stop using the bad output. |
+| BOM normalization output is wrong | Check the `FG/SFG`, `Item`, `Part No`, `Description`, and `Location` headers and Location continuation rows. Keep the source and stop using the bad output. |
 | Input assistance does not respond | Confirm the global `VBA` library is installed, Calc was restarted, macros are allowed, and the active sheet is `FA_Report`. |
 | Photo feature cannot find/moves the wrong image | Stop using it. It depends on the original author's fixed OneDrive path and moves the newest JPG. |
 | Report was cleared after archiving | `ArchiveData` clears report rows after successfully saving the history file. Check `History/History.ods`. `ClearFAReport` clears without archiving first. |
