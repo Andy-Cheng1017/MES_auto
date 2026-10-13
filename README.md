@@ -55,6 +55,8 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 7. **在 MES 人工驗證**：逐筆確認 MES 顯示及儲存結果。腳本沒有可靠的交易成功回執；批次結束不等於所有紀錄都成功。
 8. **完成並確認後歸檔**：執行 `VBA > AHK > ArchiveData`。此動作會追加到 `History/History.ods`，成功後清除 `FA_Report` 第 2 列以下的內容。歸檔前請確認資料已保存且佇列已完成。
 
+**第一次測試執行**：先只準備一筆已核准資料，完整手動填寫第 2 列，不使用複製上一列功能。匯出後確認 `MES_Jobs.json` 只有這筆資料；開啟 MES 並切到正確維修畫面，再執行 `AHK/Repairing.ahk`。看到「讀取完成」提示後確認 MES 是作用中視窗，讓腳本完成後立即檢查 MES 紀錄。確認結果正確後，才開始多筆批次；不要用正式資料測試不確定的欄位或返站流程。
+
 ### 4. `FA_Report` 欄位與輸入輔助
 
 欄名在第 1 列，資料從第 2 列開始。巨集依欄位位置運作，請勿任意移動或插入欄位。
@@ -80,7 +82,7 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 
 其他行為：
 
-- B 欄若輸入**恰好一個空格**，輸入輔助會把前一列 B:N 的內容複製到本列；只在確定要複製時使用，並檢查複製後的資料。
+- B 欄若輸入並提交**恰好一個空格**，輸入輔助會把前一列 B:N 複製到本列，不會複製 A 欄序號；完成後游標會移到下一列 A 欄，且這次不執行一般自動跳欄。第 2 列是第一筆資料，上一列是標題，因此第 2 列必須手動填寫；只有第 3 列起、且確定要沿用前一列資料時才使用此功能。複製後逐欄確認並修改不同的值。
 - 故障碼預設值、略過欄位及原因/處置模板取決於工作簿中的資料庫工作表。代碼查不到時，不要自行假設帶入成功。
 - BOM 機種名稱讀取自 `BOM_Setting` 的 B1。使用 `NormalizeBOM` 後此值會更新；若手動切換機種，請輸入不含 `.csv` 的檔名，例如 `PS_2442`。
 - 巨集查找使用資料庫中的既有文字/代碼；請勿為了讓自動化「看起來成功」而省略必要的人工檢查。
@@ -196,13 +198,15 @@ The installer requires the workbook to be saved and `VBA/script.xlb` to remain i
 ### 3. Recommended Workflow
 
 1. **Prepare the BOM if needed:** Confirm that the correct model BOM exists in `BOM_Normalized/`. If only a raw CSV is available, normalize it first (Section 5).
-2. **Fill in `FA_Report`:** Enter one record per row, starting on row 2. Verify required fields, codes, and descriptions. Input assistance runs when cell contents change.
+2. **Fill in `FA_Report`:** Enter one record per row, starting on row 2. Enter the serial number and verify required fields, codes, and descriptions. Input assistance runs when cell contents change.
 3. **Review the report:** Manually verify serial numbers, fault/accountability/repair codes, reference designators, board/layer, symptom, root cause, action, and return station. Suggestions are not confirmation that MES accepted the data or that it is correct.
 4. **Export the job queue:** Run `VBA > AHK > ExportMESJobsJson`. It overwrites `History/MES_Jobs.json` and exports rows from row 2 until the first blank serial number in column A.
 5. **Review the JSON queue:** Confirm that the file exists and that its record count and contents match the approved jobs for this run. Do not run a stale queue from an earlier session.
 6. **Run only the applicable AHK script:** Choose the script required by the current process. Both scripts read the same JSON file; do not run both back-to-back unless the workflow explicitly requires it.
 7. **Verify results in MES:** Check the displayed and saved result for every record. The scripts do not provide a reliable transaction-success receipt; reaching the end of a batch does not mean every record succeeded.
 8. **Archive only after verification:** Run `VBA > AHK > ArchiveData`. It appends to `History/History.ods` and, after a successful save, clears `FA_Report` content below row 1. Confirm that the data is saved and the queue is complete before archiving.
+
+**First test run:** Prepare one approved job and enter row 2 manually; do not use the copy-previous-row shortcut. Export the queue and confirm that `MES_Jobs.json` contains only that job. Open MES on the correct repair screen, then run `AHK/Repairing.ahk`. After the “讀取完成” prompt, make sure MES is the active window. Check the MES record as soon as the script finishes. Proceed to a multi-job batch only after this test succeeds; do not test uncertain fields or return-station flows with production data.
 
 ### 4. `FA_Report` Fields and Input Assistance
 
@@ -229,7 +233,7 @@ Headers are on row 1; records start on row 2. Macros depend on column positions,
 
 Additional behavior:
 
-- Entering **exactly one space** in column B copies columns B:N from the previous row. Use this only when intended, then review the copied values.
+- Entering and committing **exactly one space** in column B copies B:N from the previous row; column A's serial number is not copied. The cursor then moves to column A of the next row, and the normal auto-advance is skipped for this event. Row 2 is the first data row, so its previous row is the header; always fill row 2 manually. Use this shortcut only from row 3 onward when the previous row is the intended source, then verify and update every copied field.
 - Fault-code defaults, skipped columns, and root-cause/action templates depend on the workbook's database sheets. Do not assume a code was populated if no database match exists.
 - The active BOM model is read from `BOM_Setting!B1`. `NormalizeBOM` updates it. To switch models manually, enter the filename without `.csv`, for example `PS_2442`.
 - Database lookups use existing text/code values. Manual review is still required even when the automation appears to complete normally.
@@ -263,13 +267,13 @@ The AHK scripts require `History/MES_Jobs.json` and the original folder structur
 #### `Repairing.ahk`
 
 - Purpose: enters each serial number, fault/accountability/repair details, location, and description, then performs the save and return-station or scrap flow.
-- Before running, open MES, sign in, and navigate to the correct repair screen. Resolve any open dialogs first. This script does not check that the MES window is active before starting.
-- The current normal repair flow recognizes only `FNT2` and `FNT7`. Other stations produce an error prompt and require operator intervention.
+- Before running, open MES, sign in, and navigate to the correct repair screen. Resolve any open dialogs first. After the “讀取完成” prompt is dismissed, the script checks that the MES window is active; otherwise, it stops before processing jobs.
+- The current normal repair flow recognizes only `FNT2` and `FNT7`. Missing controls, failed text entry, unrecognized buttons, unsupported stations, or timeouts raise an error and stop the remaining batch. Check the affected transaction in MES before deciding whether to retry; later jobs in the queue are not processed automatically.
 - `RepairCode` equal to `*CIPS-PE-004*` selects a special scrap dialog flow. Confirm that the scrap data and reason follow the approved procedure before running it.
 - Fault codes `CP6008`, `CP6001`, `CP6045`, and `CP6078` skip accountability-code entry. The script builds the MES repair description as `Layer/Location/Symptom, RootCause, RepairAction`, and appends the board serial number when supplied.
 - Save and return-station controls partly depend on screen recognition. Changes to screen resolution, scaling, MES layout, or button appearance may prevent recognition.
 
-Both scripts currently set `LogEnabled` to `false`, so they do not create logs by default. Prompts are not a substitute for checking MES transaction results. Verify every job manually in MES; do not rely only on the script's completion message.
+Both scripts currently set `LogEnabled` to `false`, so they do not create logs by default. To write `MES_Log.txt`, set `LogEnabled` to `true` in the applicable script. Prompts are not a substitute for checking MES transaction results. Verify every job manually in MES; do not rely only on the script's completion message.
 
 ### 7. Photo and Idle Scripts
 
