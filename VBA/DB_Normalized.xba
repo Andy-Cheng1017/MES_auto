@@ -234,11 +234,14 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     Dim HeaderFound As Boolean
     Dim PartCol As Long
     Dim DescCol As Long
+    Dim MakerCol As Long
     Dim LocationCol As Long
 
     Dim RefList As String
     Dim Layer As String
     Dim PartDescription As String
+    Dim PartNumber As String
+    Dim Manufacturer As String
     Dim FGSFG As String
 
     oCursor = oSrc.createCursor()
@@ -250,6 +253,8 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     oDst.getCellByPosition(0, 0).String = &quot;位號&quot;
     oDst.getCellByPosition(1, 0).String = &quot;版面&quot;
     oDst.getCellByPosition(2, 0).String = &quot;零件描述&quot;
+    oDst.getCellByPosition(3, 0).String = &quot;料號&quot;
+    oDst.getCellByPosition(4, 0).String = &quot;廠商&quot;
     DstRow = 1
 
     For SrcRow = 0 To LastRow
@@ -270,15 +275,16 @@ Sub NormalizeBOMSheet(oSrc, oDst)
     For SrcRow = HeaderRow To LastRow
         If FindHeaderColumn(oSrc, SrcRow, &quot;FG/SFG&quot;) &gt;= 0 _
             And FindHeaderColumn(oSrc, SrcRow, &quot;Item&quot;) &gt;= 0 Then
-            WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription
+            WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription, PartNumber, Manufacturer
             RefList = &quot;&quot;
             FGCol = FindHeaderColumn(oSrc, SrcRow, &quot;FG/SFG&quot;)
             PartCol = FindHeaderColumn(oSrc, SrcRow, &quot;Part No&quot;)
             DescCol = FindHeaderColumn(oSrc, SrcRow, &quot;Description&quot;)
+            MakerCol = FindHeaderColumn(oSrc, SrcRow, &quot;Maker&quot;)
             LocationCol = FindHeaderColumn(oSrc, SrcRow, &quot;Location&quot;)
 
-            If PartCol &lt; 0 Or DescCol &lt; 0 Or LocationCol &lt; 0 Then
-                MsgBox &quot;找不到 Part No、Description 或 Location 欄位，正規化已中止。&quot;, 16
+            If PartCol &lt; 0 Or DescCol &lt; 0 Or MakerCol &lt; 0 Or LocationCol &lt; 0 Then
+                MsgBox &quot;找不到 Part No、Description、Maker 或 Location 欄位，正規化已中止。&quot;, 16
                 Error 5
             End If
         ElseIf IsBOMLocationContinuation(oSrc, SrcRow, LocationCol, LastCol) Then
@@ -288,12 +294,16 @@ Sub NormalizeBOMSheet(oSrc, oDst)
             End If
             RefList = RefList &amp; oSrc.getCellByPosition(LocationCol, SrcRow).String
         Else
-            WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription
+            WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription, PartNumber, Manufacturer
             RefList = &quot;&quot;
             PartDescription = &quot;&quot;
+            PartNumber = &quot;&quot;
+            Manufacturer = &quot;&quot;
             FGSFG = CleanBOMText(oSrc.getCellByPosition(FGCol, SrcRow).String)
             If Trim(oSrc.getCellByPosition(PartCol, SrcRow).String) &lt;&gt; &quot;&quot; Then
+                PartNumber = CleanBOMText(oSrc.getCellByPosition(PartCol, SrcRow).String)
                 PartDescription = CleanBOMText(oSrc.getCellByPosition(DescCol, SrcRow).String)
+                Manufacturer = CleanBOMText(oSrc.getCellByPosition(MakerCol, SrcRow).String)
                 If FGSFG &lt;&gt; &quot;&quot; And UCase(FGSFG) &lt;&gt; &quot;FG/SFG&quot; _
                     And PartDescription &lt;&gt; &quot;&quot; Then
                     Layer = GetBOMLayer(FGSFG)
@@ -302,7 +312,7 @@ Sub NormalizeBOMSheet(oSrc, oDst)
             End If
         End If
     Next SrcRow
-    WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription
+    WriteBOMEntry oDst, DstRow, RefList, Layer, PartDescription, PartNumber, Manufacturer
 
 End Sub
 
@@ -321,7 +331,7 @@ Function IsBOMLocationContinuation(oSheet, RowNo As Long, LocationCol As Long, L
 
 End Function
 
-Sub WriteBOMEntry(oDst, ByRef DstRow As Long, RefList As String, Layer As String, PartDescription As String)
+Sub WriteBOMEntry(oDst, ByRef DstRow As Long, RefList As String, Layer As String, PartDescription As String, PartNumber As String, Manufacturer As String)
 
     Dim RefArray
     Dim Ref
@@ -337,6 +347,8 @@ Sub WriteBOMEntry(oDst, ByRef DstRow As Long, RefList As String, Layer As String
             oDst.getCellByPosition(0, DstRow).String = Ref
             oDst.getCellByPosition(1, DstRow).String = Layer
             oDst.getCellByPosition(2, DstRow).String = PartDescription
+            oDst.getCellByPosition(3, DstRow).String = PartNumber
+            oDst.getCellByPosition(4, DstRow).String = Manufacturer
             DstRow = DstRow + 1
         End If
     Next Ref
@@ -354,6 +366,8 @@ Sub ExportSheetToCSV(oSheet, OutputPath As String)
     Dim RefDes As String
     Dim Layer As String
     Dim PartDescription As String
+    Dim PartNumber As String
+    Dim Manufacturer As String
 
     oSFA = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
     If oSFA.exists(ConvertToURL(OutputPath)) Then
@@ -372,10 +386,14 @@ Sub ExportSheetToCSV(oSheet, OutputPath As String)
         RefDes = oSheet.getCellByPosition(0, RowNo).String
         Layer = oSheet.getCellByPosition(1, RowNo).String
         PartDescription = oSheet.getCellByPosition(2, RowNo).String
+        PartNumber = oSheet.getCellByPosition(3, RowNo).String
+        Manufacturer = oSheet.getCellByPosition(4, RowNo).String
 
-        If RefDes &lt;&gt; &quot;&quot; Or Layer &lt;&gt; &quot;&quot; Or PartDescription &lt;&gt; &quot;&quot; Then
+        If RefDes &lt;&gt; &quot;&quot; Or Layer &lt;&gt; &quot;&quot; Or PartDescription &lt;&gt; &quot;&quot; _
+            Or PartNumber &lt;&gt; &quot;&quot; Or Manufacturer &lt;&gt; &quot;&quot; Then
             oTextOutput.writeString(EscapeCSVField(RefDes) &amp; &quot;,&quot; &amp; _
-            EscapeCSVField(Layer) &amp; &quot;,&quot; &amp; EscapeCSVField(PartDescription) &amp; Chr(10))
+            EscapeCSVField(Layer) &amp; &quot;,&quot; &amp; EscapeCSVField(PartDescription) &amp; &quot;,&quot; &amp; _
+            EscapeCSVField(PartNumber) &amp; &quot;,&quot; &amp; EscapeCSVField(Manufacturer) &amp; Chr(10))
         End If
     Next RowNo
 

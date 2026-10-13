@@ -26,7 +26,7 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 | `AHK/_JXON.ahk` | AHK v2 的 JSON 讀取函式庫。 |
 | `AHK/No_sleep.ahk` | 閒置時送出 F24 的選用腳本；不是 MES 作業必要元件。 |
 | `BOM_Raw/` | 原始 BOM CSV 輸入資料。 |
-| `BOM_Normalized/` | 標準化 BOM CSV；欄位為位號、版面、零件描述。 |
+| `BOM_Normalized/` | 標準化 BOM CSV；欄位為位號、版面、零件描述、料號、廠商。 |
 | `History/MES_Jobs.json` | AHK 共用的作業佇列。匯出巨集會覆寫此檔。 |
 | `History/History.ods` | 歸檔巨集建立/追加的歷史資料檔；尚未歸檔時可能不存在。 |
 
@@ -95,9 +95,9 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 2. 在 Calc 執行 `VBA > DB_Normalized > NormalizeBOM`。
 3. 輸入原始檔名稱（可不含 `.csv`），例如 `PS_2442`。
 4. 巨集會匯入至 `BOM_Raw_Import`、整理至 `BOM_Normalized_Import`，並輸出 `BOM_Normalized/<機種>.csv`；同名輸出檔會被覆寫。它也會更新 `BOM_Setting` 的 B1。
-5. 開啟輸出檔確認標題為 `位號,版面,零件描述`，檢查筆數及代表性位號/描述，再用於作業。
+5. 開啟輸出檔確認標題為 `位號,版面,零件描述,料號,廠商`，檢查筆數及代表性位號、描述、料號/廠商，再用於作業。
 
-標準化巨集依 `FG/SFG`、`Item` 主表表頭及 `Part No`、`Description`、`Location` 標題定位欄位，不使用固定欄位位置或 `PC` 標記；中間插入空欄不會改變對應。只有 Location 有內容的續接列會接到上一筆位號清單，再移除 CR/LF/Tab 並按逗號拆分；空 Location 的備用料不輸出。缺少必要表頭或續接列沒有來源資料時會中止，不匯出新 CSV。出現欄位錯誤或輸出異常時應停止使用，先檢查原始 CSV，不要把錯誤 BOM 用於 MES。
+標準化巨集依 `FG/SFG`、`Item` 主表表頭及 `Part No`、`Description`、`Maker`、`Location` 標題定位欄位，不使用固定欄位位置或 `PC` 標記；中間插入空欄不會改變對應。輸出的料號與廠商分別來自 `Part No` 與 `Maker`。只有 Location 有內容的續接列會接到上一筆位號清單，再移除 CR/LF/Tab 並按逗號拆分；空 Location 的備用料不輸出。缺少必要表頭或續接列沒有來源資料時會中止，不匯出新 CSV。出現欄位錯誤或輸出異常時應停止使用，先檢查原始 CSV，不要把錯誤 BOM 用於 MES。
 
 ### 6. JSON 與 MES AHK 腳本
 
@@ -177,7 +177,7 @@ AHK 腳本依賴 `History/MES_Jobs.json`，且預期資料夾結構維持原樣�
 | `AHK/_JXON.ahk` | JSON reader library for AutoHotkey v2. |
 | `AHK/No_sleep.ahk` | Optional script that sends F24 when idle; not required for MES processing. |
 | `BOM_Raw/` | Source BOM CSV files. |
-| `BOM_Normalized/` | Normalized BOM CSV files with reference designator, board/layer, and part description columns. |
+| `BOM_Normalized/` | Normalized BOM CSV files with reference designator, board/layer, part description, part number, and manufacturer columns. |
 | `History/MES_Jobs.json` | Shared job queue read by the AHK scripts. The export macro overwrites it. |
 | `History/History.ods` | History file created/appended by the archive macro; it may not exist before the first archive. |
 
@@ -246,9 +246,9 @@ The current raw BOM files are `BM_2802.csv`, `MF_2442.csv`, `PS_2442.csv`, and `
 2. In Calc, run `VBA > DB_Normalized > NormalizeBOM`.
 3. Enter the raw filename, with or without `.csv`, for example `PS_2442`.
 4. The macro imports the source into `BOM_Raw_Import`, transforms it into `BOM_Normalized_Import`, and writes `BOM_Normalized/<model>.csv`. An existing output with the same name is overwritten. It also updates `BOM_Setting` cell B1.
-5. Open the output and confirm the headers are `位號,版面,零件描述`; check the row count and representative references/descriptions before using it.
+5. Open the output and confirm the headers are `位號,版面,零件描述,料號,廠商`; check the row count and representative references, descriptions, part numbers, and manufacturers before using it.
 
-The normalizer maps columns using the `FG/SFG`, `Item`, `Part No`, `Description`, and `Location` headers, not fixed column positions or a `PC` marker. Inserted blank columns do not change the mapping. Rows containing only Location text are appended to the preceding location list before CR/LF/Tab removal and comma splitting. Alternate parts with empty Location are omitted. Missing required headers or orphan continuation rows stop processing before CSV export. Stop and inspect the raw CSV if fields or output look wrong; do not use an incorrect BOM in MES.
+The normalizer maps columns using the `FG/SFG`, `Item`, `Part No`, `Description`, `Maker`, and `Location` headers, not fixed column positions or a `PC` marker. Inserted blank columns do not change the mapping. `Part No` and `Maker` are exported as the part number and manufacturer. Rows containing only Location text are appended to the preceding location list before CR/LF/Tab removal and comma splitting. Alternate parts with empty Location are omitted. Missing required headers or orphan continuation rows stop processing before CSV export. Stop and inspect the raw CSV if fields or output look wrong; do not use an incorrect BOM in MES.
 
 ### 6. JSON and MES AHK Scripts
 
