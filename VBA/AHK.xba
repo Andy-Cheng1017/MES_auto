@@ -10,14 +10,53 @@ Sub ExportMESJobsJson()
     Dim firstRow As Boolean
     Dim fn As Integer
     Dim SavePath As String
+    Dim checkRow As Long
+    Dim checkCol As Long
+    Dim hasData As Boolean
+    Dim missingFields As String
+    Dim warningMessage As String
 
     SavePath = GetCurrentFolder() &amp; &quot;\History\MES_Jobs.json&quot;
+
+    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
+
+    checkRow = 1
+    Do
+        hasData = False
+        For checkCol = 0 To 14
+            If Trim(oSheet.getCellByPosition(checkCol, checkRow).String) &lt;&gt; &quot;&quot; Then
+                hasData = True
+                Exit For
+            End If
+        Next checkCol
+
+        If Not hasData Then Exit Do
+
+        missingFields = &quot;&quot;
+        If Trim(oSheet.getCellByPosition(0, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;序號、&quot;
+        If Trim(oSheet.getCellByPosition(1, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;不良原因代碼、&quot;
+        If Trim(oSheet.getCellByPosition(2, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;不良原因描述、&quot;
+        If Trim(oSheet.getCellByPosition(3, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;責任代碼、&quot;
+        If Trim(oSheet.getCellByPosition(4, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;責任原因描述、&quot;
+        If Trim(oSheet.getCellByPosition(8, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;維修代碼、&quot;
+        If Trim(oSheet.getCellByPosition(9, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;維修描述、&quot;
+        If Trim(oSheet.getCellByPosition(13, checkRow).String) = &quot;&quot; Then missingFields = missingFields &amp; &quot;解回站點、&quot;
+
+        If missingFields &lt;&gt; &quot;&quot; Then
+            warningMessage = warningMessage &amp; &quot;第 &quot; &amp; (checkRow + 1) &amp; &quot; 列：&quot; &amp; Left(missingFields, Len(missingFields) - 1) &amp; Chr(10)
+        End If
+
+        checkRow = checkRow + 1
+    Loop
+
+    If warningMessage &lt;&gt; &quot;&quot; Then
+        MsgBox &quot;以下資料缺少必填欄位，未輸出 JSON：&quot; &amp; Chr(10) &amp; warningMessage, 48
+        Exit Sub
+    End If
 
     If FileExists(ConvertToURL(SavePath)) Then
         Kill SavePath
     End If
-
-    oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
 
     json = &quot;[&quot;
     firstRow = True

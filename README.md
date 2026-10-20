@@ -97,7 +97,7 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 4. 巨集會匯入至 `BOM_Raw_Import`、整理至 `BOM_Normalized_Import`，並輸出 `BOM_Normalized/<機種>.csv`；同名輸出檔會被覆寫。它也會更新 `BOM_Setting` 的 B1。
 5. 開啟輸出檔確認標題為 `位號,版面,零件描述,料號,廠商`，檢查筆數及代表性位號、描述、料號/廠商，再用於作業。
 
-標準化巨集依 `FG/SFG`、`Item` 主表表頭及 `Part No`、`Description`、`Maker`、`Location` 標題定位欄位，不使用固定欄位位置或 `PC` 標記；中間插入空欄不會改變對應。輸出的料號與廠商分別來自 `Part No` 與 `Maker`。只有 Location 有內容的續接列會接到上一筆位號清單，再移除 CR/LF/Tab 並按逗號拆分；空 Location 的備用料不輸出。缺少必要表頭或續接列沒有來源資料時會中止，不匯出新 CSV。出現欄位錯誤或輸出異常時應停止使用，先檢查原始 CSV，不要把錯誤 BOM 用於 MES。
+標準化巨集依 `FG/SFG`、`Item` 主表表頭及 `Part No`、`Description`、`Maker`、`Location` 標題定位欄位，不使用固定欄位位置或 `PC` 標記；中間插入空欄不會改變對應。若 `Description` 欄空白，且 `Description` 與 `Maker` 之間有無標題欄，巨集會以該欄作為描述備援。輸出的料號與廠商分別來自 `Part No` 與 `Maker`。只有 Location 有內容的續接列會接到上一筆位號清單，再移除 CR/LF/Tab 並按逗號拆分；空 Location 的備用料不輸出。缺少必要表頭或續接列沒有來源資料時會中止，不匯出新 CSV。出現欄位錯誤或輸出異常時應停止使用，先檢查原始 CSV，不要把錯誤 BOM 用於 MES。
 
 ### 6. JSON 與 MES AHK 腳本
 
@@ -248,7 +248,7 @@ The current raw BOM files are `BM_2802.csv`, `MF_2442.csv`, `PS_2442.csv`, and `
 4. The macro imports the source into `BOM_Raw_Import`, transforms it into `BOM_Normalized_Import`, and writes `BOM_Normalized/<model>.csv`. An existing output with the same name is overwritten. It also updates `BOM_Setting` cell B1.
 5. Open the output and confirm the headers are `位號,版面,零件描述,料號,廠商`; check the row count and representative references, descriptions, part numbers, and manufacturers before using it.
 
-The normalizer maps columns using the `FG/SFG`, `Item`, `Part No`, `Description`, `Maker`, and `Location` headers, not fixed column positions or a `PC` marker. Inserted blank columns do not change the mapping. `Part No` and `Maker` are exported as the part number and manufacturer. Rows containing only Location text are appended to the preceding location list before CR/LF/Tab removal and comma splitting. Alternate parts with empty Location are omitted. Missing required headers or orphan continuation rows stop processing before CSV export. Stop and inspect the raw CSV if fields or output look wrong; do not use an incorrect BOM in MES.
+The normalizer maps columns using the `FG/SFG`, `Item`, `Part No`, `Description`, `Maker`, and `Location` headers, not fixed column positions or a `PC` marker. Inserted blank columns do not change the mapping. If `Description` is blank and an unnamed column exists between `Description` and `Maker`, that column is used as a description fallback. `Part No` and `Maker` are exported as the part number and manufacturer. Rows containing only Location text are appended to the preceding location list before CR/LF/Tab removal and comma splitting. Alternate parts with empty Location are omitted. Missing required headers or orphan continuation rows stop processing before CSV export. Stop and inspect the raw CSV if fields or output look wrong; do not use an incorrect BOM in MES.
 
 ### 6. JSON and MES AHK Scripts
 

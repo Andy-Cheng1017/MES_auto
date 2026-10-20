@@ -303,6 +303,11 @@ Sub NormalizeBOMSheet(oSrc, oDst)
             If Trim(oSrc.getCellByPosition(PartCol, SrcRow).String) &lt;&gt; &quot;&quot; Then
                 PartNumber = CleanBOMText(oSrc.getCellByPosition(PartCol, SrcRow).String)
                 PartDescription = CleanBOMText(oSrc.getCellByPosition(DescCol, SrcRow).String)
+                If PartDescription = &quot;&quot; And DescCol + 1 &lt; MakerCol Then
+                    If CleanBOMText(oSrc.getCellByPosition(DescCol + 1, HeaderRow).String) = &quot;&quot; Then
+                        PartDescription = CleanBOMText(oSrc.getCellByPosition(DescCol + 1, SrcRow).String)
+                    End If
+                End If
                 Manufacturer = CleanBOMText(oSrc.getCellByPosition(MakerCol, SrcRow).String)
                 If FGSFG &lt;&gt; &quot;&quot; And UCase(FGSFG) &lt;&gt; &quot;FG/SFG&quot; _
                     And PartDescription &lt;&gt; &quot;&quot; Then
