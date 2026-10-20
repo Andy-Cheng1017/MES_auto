@@ -34,15 +34,36 @@ This guide covers the LibreOffice Calc workbook, Basic macros, AutoHotkey script
 
 ### 2. 必要條件與首次設定
 
-1. 使用 Windows、LibreOffice Calc，以及 AutoHotkey v2。專案包含 AutoHotkey 2.0.19 安裝壓縮檔；若公司有核准版本，使用公司核准版本。
+1. 使用 Windows、**LibreOffice Portable 中的 Calc**，以及 AutoHotkey v2。因公司 Excel 巨集（Macro）政策限制，本專案僅使用 LibreOffice Portable 執行，不使用 Microsoft Excel，也不要嘗試解除 Excel 的巨集限制。請先確認公司允許使用此軟體，再由 [PortableApps.com 的 LibreOffice Portable 下載頁](https://portableapps.com/apps/office/libreoffice_portable)取得；下載後依安裝程式指示解壓至公司核准的位置。PortableApps.com 提醒安裝路徑不可包含非 ASCII 字元，請避免中文路徑，例如可使用 `C:\Tools\LibreOfficePortable`。專案包含 AutoHotkey 2.0.19 安裝壓縮檔；若公司有核准版本，使用公司核准版本。
 2. 將整個專案放在本機或公司核准的位置，確認 `MES_Auot.ods`、`VBA/script.xlb`、`AHK/`、`BOM_Raw/`、`BOM_Normalized/` 和 `History/` 都在同一專案根目錄。
-3. 在 LibreOffice 開啟並儲存 `MES_Auot.ods`。依公司政策允許此文件的巨集執行；不要為此降低整台電腦的巨集安全設定。
+3. 啟動 LibreOffice Portable 的 Calc，從程式內開啟並儲存 `MES_Auot.ods`，避免直接雙擊檔案而開到 Excel 或其他版本的 LibreOffice。依公司政策允許此文件的巨集執行（詳見第 2.1 節）；不要為此降低整台電腦的巨集安全設定。
 4. 從 Calc 執行工作簿內建安裝巨集：**工具 > 巨集 > 執行巨集**，選擇 `MES_Auot.ods > Standard > Install_lib > InstallMESLibrary`，然後按「執行」。此巨集會將專案中的 `VBA/script.xlb` 連結為 LibreOffice 全域 `VBA` 函式庫。
 5. 安裝完成後關閉所有 LibreOffice 視窗，再重新開啟工作簿。巨集程式庫是連結到目前資料夾；移動專案後需重新連結。
 6. `InstallMESLibrary` 若發現全域已有名為 `VBA` 的函式庫，會先移除該函式庫再建立專案連結。若同事已使用其他同名全域函式庫，先備份並請 LibreOffice 管理者確認，再執行安裝。
 7. 確認巨集選單中可找到 `VBA` 函式庫。`FA_Report` 的內容變更事件已設定為呼叫 `VBA.FA_FuntionKey.Main`；若程式庫未載入，輸入輔助不會正常工作。
 
 安裝巨集依賴工作簿已儲存，且 `VBA/script.xlb` 位於工作簿同一層的 `VBA` 子資料夾。不要只複製 `.xba` 到其他位置後就假設已安裝。
+
+#### 2.1 新電腦：允許巨集執行
+
+換電腦或使用新的 LibreOffice Portable 設定檔時，請重新確認以下設定；選單名稱可能隨版本或介面語言略有不同。
+
+1. 在 Calc 開啟 **工具 (Tools) > 選項 (Options) > LibreOffice > 安全性 (Security) > 巨集安全性 (Macro Security)**。
+2. 依公司政策選擇安全性等級：
+   - **中 (Medium)**：開啟含巨集的文件時會要求確認；只在確認文件來源與內容可信後允許執行。
+   - **高 (High)**：僅允許受信任來源的巨集；一般位置中的巨集需具備受信任的簽章，未簽章的巨集會被停用。若本專案因此無法執行，請由 IT 確認簽章或核准專用的信任位置，不是按下提示就能執行所有巨集。
+3. 按確定儲存後，關閉並重新開啟工作簿，讓新的巨集安全性設定生效，再繼續執行第 2 節的函式庫安裝。
+
+**不要選擇「低 (Low)」或將整個下載資料夾、磁碟機設為信任位置。** LibreOffice Portable 並不代表可繞過公司政策；若設定受管理或禁止變更，請交由 IT 處理。
+
+#### 2.2 新電腦：關閉小寫 `i` 自動變成大寫 `I`
+
+這是 Calc 的**自動修正 (AutoCorrect)** 規則造成，與本專案巨集無關；可能影響需要保留原始大小寫的代碼或文字。
+
+1. 開啟 **工具 (Tools) > 自動修正選項 (AutoCorrect Options...)**；部分版本位於 **工具 > 自動修正 (AutoCorrect) > 自動修正選項**。
+2. 切換至 **替換 (Replace)** 標籤頁，確認目前選取的是輸入時使用的語言（例如英文）。
+3. 在清單中尋找將 `i` 替換為 `I` 的規則，選取後按 **刪除 (Delete)**，再按 **確定 (OK)** 儲存。若找不到，先確認替換清單的語言是否正確，不要刪除不相關的規則。
+4. 在空白儲存格輸入小寫 `i` 並提交，確認仍保留為 `i`；測試完成後清除測試內容，再開始填寫正式報表。
 
 ### 3. 建議作業順序
 
@@ -147,6 +168,8 @@ AHK 腳本依賴 `History/MES_Jobs.json`，且預期資料夾結構維持原樣�
 | BOM 查不到零件 | 確認 `BOM_Setting!B1` 的機種名稱與 `BOM_Normalized/<機種>.csv` 完全相符，並確認位號存在。 |
 | BOM 標準化輸出錯誤 | 確認原始 CSV 的 `FG/SFG`、`Item`、`Part No`、`Description`、`Location` 標題及 Location 續接列；保留原始檔並停止使用錯誤輸出。 |
 | 輸入輔助沒有反應 | 確認已安裝全域 `VBA` 函式庫、已重新開啟 Calc、巨集允許執行，且正在編輯 `FA_Report`。 |
+| 新電腦無法執行巨集 | 確認使用 LibreOffice Portable 的 Calc，並依第 2.1 節檢查巨集安全性；變更後重新開啟工作簿。不要解除 Excel 限制或改成「低」。 |
+| 小寫 `i` 自動變成大寫 `I` | 與巨集無關；依第 2.2 節刪除目前輸入語言的 `i` → `I` 自動修正替換規則。 |
 | 照片功能找不到/搬錯照片 | 停止使用；目前功能依賴建立者個人 OneDrive 固定路徑，且會移動最新 JPG。 |
 | 歸檔後報表被清空 | `ArchiveData` 成功儲存歷史檔後會清除資料列；檢查 `History/History.ods`。若要單獨清除，`ClearFAReport` 不會先替你歸檔。 |
 
@@ -185,15 +208,36 @@ Keep the complete folder structure intact. The macros and AHK scripts resolve si
 
 ### 2. Requirements and First-Time Setup
 
-1. Use Windows, LibreOffice Calc, and AutoHotkey v2. An AutoHotkey 2.0.19 setup archive is included; use the company-approved version if one is required.
+1. Use Windows, **Calc from LibreOffice Portable**, and AutoHotkey v2. Because of the company's Excel macro policy, this project must use LibreOffice Portable rather than Microsoft Excel; do not try to remove Excel's macro restrictions. Confirm that company policy permits this software, then obtain it from the [LibreOffice Portable download page on PortableApps.com](https://portableapps.com/apps/office/libreoffice_portable) and follow the installer to extract it to an approved location. PortableApps.com warns that the installation path must not contain non-ASCII characters; avoid Chinese characters in that path, for example by using `C:\Tools\LibreOfficePortable`. An AutoHotkey 2.0.19 setup archive is included; use the company-approved version if one is required.
 2. Place the complete project in a local or company-approved location. Keep `MES_Auot.ods`, `VBA/script.xlb`, `AHK/`, `BOM_Raw/`, `BOM_Normalized/`, and `History/` under the same project root.
-3. Open and save `MES_Auot.ods` in LibreOffice. Allow this document's macros according to company policy; do not weaken computer-wide macro security for this project.
+3. Start Calc from LibreOffice Portable, then open and save `MES_Auot.ods` from within the application. Double-clicking the file may open Excel or a different LibreOffice installation instead. Allow this document's macros according to company policy (see Section 2.1); do not weaken computer-wide macro security for this project.
 4. Run the workbook's installer macro from Calc: **Tools > Macros > Run Macro**, select `MES_Auot.ods > Standard > Install_lib > InstallMESLibrary`, then click **Run**. It links the project's `VBA/script.xlb` as LibreOffice's global `VBA` library.
 5. When installation completes, close all LibreOffice windows and reopen the workbook. The macro library links to the current folder; moving the project requires relinking it.
 6. If a global library named `VBA` already exists, `InstallMESLibrary` removes it before creating the project link. If a colleague uses another global library with that name, back it up and consult the LibreOffice administrator before installing.
 7. Confirm that the `VBA` library is available in the macro list. The `FA_Report` content-changed event is configured to call `VBA.FA_FuntionKey.Main`; input assistance will not work correctly if the library is unavailable.
 
 The installer requires the workbook to be saved and `VBA/script.xlb` to remain in the workbook's sibling `VBA` folder. Copying `.xba` files elsewhere does not install the library.
+
+#### 2.1 New Computer: Allowing Macros
+
+Recheck these settings on a new computer or with a new LibreOffice Portable profile. Menu names may vary slightly by version or interface language.
+
+1. In Calc, open **Tools > Options > LibreOffice > Security > Macro Security**.
+2. Choose a security level permitted by company policy:
+   - **Medium:** Prompts for confirmation when opening documents containing macros. Allow execution only after verifying the document's source and contents.
+   - **High:** Allows macros only from trusted sources. Outside trusted locations, macros require a trusted signature; unsigned macros are disabled. If this blocks the project, ask IT to review signing or approve a dedicated trusted location. A prompt does not allow every macro to run.
+3. Save the settings, close and reopen the workbook for the new security settings to take effect, then continue with the library installation in Section 2.
+
+**Do not select Low or trust an entire downloads folder or drive.** LibreOffice Portable is not an exemption from company policy. If settings are managed or changes are prohibited, contact IT.
+
+#### 2.2 New Computer: Keeping Lowercase `i` from Becoming Uppercase `I`
+
+This is caused by Calc's **AutoCorrect** rules, not the project's macros. It can affect codes or text whose original case must be preserved.
+
+1. Open **Tools > AutoCorrect Options...**. Some versions place this under **Tools > AutoCorrect > AutoCorrect Options...**.
+2. Select the **Replace** tab and check that the selected language matches the input language (for example, English).
+3. Find the rule replacing `i` with `I`, select it, click **Delete**, and click **OK** to save. If the rule is missing, check the replacement-list language before deleting unrelated rules.
+4. Enter lowercase `i` in an empty cell and commit the entry. Confirm it remains lowercase, then clear the test content before entering actual report data.
 
 ### 3. Recommended Workflow
 
@@ -298,6 +342,8 @@ Both scripts currently set `LogEnabled` to `false`, so they do not create logs b
 | BOM lookup returns no part | Confirm `BOM_Setting!B1` exactly matches `BOM_Normalized/<model>.csv` and that the reference exists. |
 | BOM normalization output is wrong | Check the `FG/SFG`, `Item`, `Part No`, `Description`, and `Location` headers and Location continuation rows. Keep the source and stop using the bad output. |
 | Input assistance does not respond | Confirm the global `VBA` library is installed, Calc was restarted, macros are allowed, and the active sheet is `FA_Report`. |
+| Macros do not run on a new computer | Use Calc from LibreOffice Portable and check macro security in Section 2.1; reopen the workbook after changing settings. Do not remove Excel restrictions or select Low. |
+| Lowercase `i` becomes uppercase `I` | This is unrelated to macros. Follow Section 2.2 to delete the `i` to `I` AutoCorrect replacement rule for the current input language. |
 | Photo feature cannot find/moves the wrong image | Stop using it. It depends on the original author's fixed OneDrive path and moves the newest JPG. |
 | Report was cleared after archiving | `ArchiveData` clears report rows after successfully saving the history file. Check `History/History.ods`. `ClearFAReport` clears without archiving first. |
 
