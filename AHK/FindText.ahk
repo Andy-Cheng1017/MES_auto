@@ -2249,10 +2249,24 @@ SC(RGB, hwnd)
 ;==== Optional GUI interface ====
 
 
+; Return one confirmed pattern directly, without changing the clipboard.
+CapturePattern()
+{
+  criticalState:=A_IsCritical, hiddenState:=A_DetectHiddenWindows
+  Critical
+  try return this.Gui("Capture", 1, true)
+  finally
+  {
+    Critical criticalState
+    DetectHiddenWindows hiddenState
+  }
+}
+
 Gui(cmd, arg1:="", args*)
 {
   static
-  local cri, lls, _Gui
+  local cri, lls, _Gui, captureOnly
+  captureOnly:=((cmd="Capture" || cmd="CaptureS") && args.Length && args[1])
   ListLines InStr("MouseMove|ToolTipOff",cmd)?0:A_ListLines
   static init:=0
   if (!init && init:=1)
@@ -2622,6 +2636,8 @@ Gui(cmd, arg1:="", args*)
     For k,v in Pics
       Try DllCall("DeleteObject", "Ptr",k)
     Text:=RegExMatch(Result,"\|<[^>\n]*>[^$\n]+\$[^`"'\r\n]+",&r)?r[0]:""
+    if (captureOnly)
+      return Event="OK" ? Text : ""
     ;------------------------
     _Gui:=FindText_Main
     if (bind_mode!="")
