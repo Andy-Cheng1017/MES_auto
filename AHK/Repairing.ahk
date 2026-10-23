@@ -211,54 +211,74 @@ ClickImage(label, timeoutMs := 5000) {
         throw Error("找不到作用中視窗: " label)
     WinGetPos(&wx, &wy, &ww, &wh, "ahk_id " hwnd)
     dpi := DllCall("GetDpiForWindow", "Ptr", hwnd, "UInt")
-    context := ("CaptureV1|" label "|" WinGetProcessName("ahk_id " hwnd)
-    "|" WinGetClass("ahk_id " hwnd) "|" ww "|" wh "|" dpi
-    "|" SysGet(76) "|" SysGet(77) "|" SysGet(78) "|" SysGet(79))
-    key := Format("{:08X}", DllCall("ntdll\RtlComputeCrc32", "UInt", 0,
+    display := ImageDisplaySettings(hwnd)
+    context := "DisplayV2|" label "|" display
+    key := "DisplayV2-" Format("{:08X}", DllCall("ntdll\RtlComputeCrc32", "UInt", 0,
         "Ptr", StrPtr(context), "UInt", StrLen(context) * 2, "UInt"))
     config := ImageSearchConfig()
     saved := IniRead(config, key, "Target", "")
     needsConfirmation := saved = ""
-    cached := ""
-    if needsConfirmation {
-        pattern := CaptureImagePattern(label, hwnd)
+    candidates := []
+    if saved != "" {
+        candidates.Push(ParseImageTarget(saved, config, label))
     } else {
-        fields := StrSplit(saved, "`t")
-        if fields.Length != 2 || !RegExMatch(fields[2], "^-?\d+,-?\d+,[1-9]\d*,[1-9]\d*$")
-            throw Error("圖片快取格式不正確，請刪除後重試: " config)
-        pattern := fields[1]
-        cached := StrSplit(fields[2], ",")
+        if FileExist(config) {
+            seen := Map()
+            for section in StrSplit(IniRead(config), "`n", "`r") {
+                if !RegExMatch(section, "^[0-9A-Fa-f]{8}$") || IniRead(config, section, "Label", "") != label
+                    continue
+                target := ParseImageTarget(IniRead(config, section, "Target", ""), config, label)
+                if !seen.Has(target.pattern) {
+                    candidates.Push(target)
+                    seen[target.pattern] := true
+                }
+            }
+        }
     }
-    if !RegExMatch(pattern, "^\|<[^>|`t\r\n]*>[^$|`t\r\n]+\$[^|`t\r\n]+$")
-    || !IsObject(FindText().PicInfo(pattern))
-        throw Error("圖片資料不正確，請重新擷取: " label " / " config)
+    tryingLegacy := needsConfirmation && candidates.Length > 0
+    if !candidates.Length
+        candidates.Push(ParseImageTarget(CaptureImagePattern(label, hwnd), config, label, false))
 
     started := A_TickCount
-    while (A_TickCount - started < timeoutMs) {
-        position := CheckImageWindow(hwnd, ww, wh, dpi, label)
+    loop {
+        if A_TickCount - started >= timeoutMs {
+            if !tryingLegacy
+                break
+            Log(label " legacy images did not match; requesting capture")
+            candidates := [ParseImageTarget(CaptureImagePattern(label, hwnd), config, label, false)]
+            tryingLegacy := false
+            started := A_TickCount
+        }
+        position := CheckImageWindow(hwnd, ww, wh, dpi, label, display)
         wx := position[1], wy := position[2]
         match := 0
-        if cached is Array {
-            cx := wx + cached[1], cy := wy + cached[2]
-            radiusX := Ceil(cached[3] / 2) + 64
-            radiusY := Ceil(cached[4] / 2) + 64
-            left := Max(wx, cx - radiusX)
-            top := Max(wy, cy - radiusY)
-            right := Min(wx + ww - 1, cx + radiusX)
-            bottom := Min(wy + wh - 1, cy + radiusY)
-            if left < right && top < bottom
-                match := FindText(&x, &y, left, top, right, bottom, 0, 0, pattern, 1, 0)
+        for candidate in candidates {
+            pattern := candidate.pattern, cached := candidate.cached
+            if cached is Array {
+                cx := wx + cached[1], cy := wy + cached[2]
+                radiusX := Ceil(cached[3] / 2) + 64
+                radiusY := Ceil(cached[4] / 2) + 64
+                left := Max(wx, cx - radiusX)
+                top := Max(wy, cy - radiusY)
+                right := Min(wx + ww - 1, cx + radiusX)
+                bottom := Min(wy + wh - 1, cy + radiusY)
+                if left < right && top < bottom
+                    match := FindText(&x, &y, left, top, right, bottom, 0, 0, pattern, 1, 0)
+            }
+            if !match
+                match := FindText(&x, &y, wx, wy, wx + ww - 1, wy + wh - 1, 0, 0, pattern, 1, 0)
+            if match
+                break
         }
-        if !match
-            match := FindText(&x, &y, wx, wy, wx + ww - 1, wy + wh - 1, 0, 0, pattern, 1, 0)
 
         if match {
             entry := match[1]
             if needsConfirmation {
                 FindText().RangeTip(entry.%1%, entry.%2%, entry.%3%, entry.%4%)
                 try answer := MsgBox("已辨識到「" label "」，位置 (" x ", " y ")。`n"
-                    "請確認紅框內是要點擊的目標。`n按「確定」儲存圖片並點擊；取消則停止。",
-                    "確認新圖片", "OKCancel")
+                    "請確認紅框內是要點擊的目標。`n"
+                    "圖片可能來自舊紀錄；按「確定」儲存至目前螢幕設定並點擊，取消則停止。",
+                    "確認圖片設定", "OKCancel")
                 finally FindText().RangeTip()
                 if answer != "OK"
                     throw Error("已取消圖片確認: " label)
@@ -266,6 +286,8 @@ ClickImage(label, timeoutMs := 5000) {
                 if !WinWaitActive("ahk_id " hwnd, , 3)
                     throw Error("無法返回目標視窗: " label)
                 needsConfirmation := false
+                tryingLegacy := false
+                candidates := [{pattern: pattern, cached: cached}]
                 ; The confirmation dialog covered the screen; recognize again before clicking.
                 started := A_TickCount
                 continue
@@ -274,9 +296,10 @@ ClickImage(label, timeoutMs := 5000) {
             value := pattern "`t" (x - wx) "," (y - wy) "," entry.%3% "," entry.%4%
             if saved != value {
                 IniWrite(label, config, key, "Label")
+                IniWrite(display, config, key, "Display")
                 IniWrite(value, config, key, "Target")
             }
-            position := CheckImageWindow(hwnd, ww, wh, dpi, label)
+            position := CheckImageWindow(hwnd, ww, wh, dpi, label, display)
             if position[1] != wx || position[2] != wy
                 throw Error("點擊前視窗位置已改變: " label)
             FindText().Click(x, y, "L")
@@ -288,6 +311,36 @@ ClickImage(label, timeoutMs := 5000) {
     }
 
     throw Error("找不到 " label " 按鈕/畫面，等待 " timeoutMs " ms 後逾時")
+}
+
+ImageDisplaySettings(hwnd) {
+    monitor := DllCall("MonitorFromWindow", "Ptr", hwnd, "UInt", 2, "Ptr")
+    info := Buffer(40, 0)
+    NumPut("UInt", info.Size, info)
+    if !monitor || !DllCall("GetMonitorInfoW", "Ptr", monitor, "Ptr", info, "Int")
+        throw OSError(, , "無法取得 MES 所在螢幕的設定")
+    width := NumGet(info, 12, "Int") - NumGet(info, 4, "Int")
+    height := NumGet(info, 16, "Int") - NumGet(info, 8, "Int")
+    dpi := DllCall("GetDpiForWindow", "Ptr", hwnd, "UInt")
+    if dpi = 0
+        throw Error("無法取得 MES 視窗 DPI")
+    return width "x" height "@" dpi
+}
+
+ParseImageTarget(value, config, label, hasPosition := true) {
+    cached := ""
+    if hasPosition {
+        fields := StrSplit(value, "`t")
+        if fields.Length != 2 || !RegExMatch(fields[2], "^-?\d+,-?\d+,[1-9]\d*,[1-9]\d*$")
+            throw Error("圖片快取格式不正確，請刪除後重試: " config)
+        pattern := fields[1], cached := StrSplit(fields[2], ",")
+    } else {
+        pattern := value
+    }
+    if !RegExMatch(pattern, "^\|<[^>|`t\r\n]*>[^$|`t\r\n]+\$[^|`t\r\n]+$")
+        || !IsObject(FindText().PicInfo(pattern))
+        throw Error("圖片資料不正確，請重新擷取: " label " / " config)
+    return {pattern: pattern, cached: cached}
 }
 
 CaptureImagePattern(label, hwnd) {
@@ -314,12 +367,14 @@ CaptureImagePattern(label, hwnd) {
     return pattern
 }
 
-CheckImageWindow(hwnd, width, height, dpi, label) {
+CheckImageWindow(hwnd, width, height, dpi, label, display) {
     if !WinActive("ahk_id " hwnd)
         throw Error("辨識期間作用中視窗已改變: " label)
     WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
     if w != width || h != height || DllCall("GetDpiForWindow", "Ptr", hwnd, "UInt") != dpi
         throw Error("辨識期間視窗尺寸或 DPI 已改變，請重試: " label)
+    if ImageDisplaySettings(hwnd) != display
+        throw Error("辨識期間螢幕設定已改變，請重試: " label)
     return [x, y]
 }
 

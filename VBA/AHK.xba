@@ -15,8 +15,15 @@ Sub ExportMESJobsJson()
     Dim hasData As Boolean
     Dim missingFields As String
     Dim warningMessage As String
+    Dim HistoryFolderURL As String
+    Dim oSimpleFileAccess
 
     SavePath = GetCurrentFolder() &amp; &quot;\History\MES_Jobs.json&quot;
+    HistoryFolderURL = ConvertToURL(GetCurrentFolder() &amp; &quot;\History&quot;)
+    oSimpleFileAccess = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
+    If Not oSimpleFileAccess.exists(HistoryFolderURL) Then
+        oSimpleFileAccess.createFolder(HistoryFolderURL)
+    End If
 
     oSheet = ThisComponent.Sheets.getByName(&quot;FA_Report&quot;)
 
@@ -172,6 +179,7 @@ Sub ArchiveData()
     Dim DstRow As Long
     Dim LastCol As Long
     Dim Col As Long
+        Dim HistoryFolderURL As String
     Dim HistoryURL As String
     Dim NewHistory As Boolean
     Dim HistoryOpen As Boolean
@@ -190,10 +198,16 @@ Sub ArchiveData()
         End If
 
         oSrcSheet = oDoc.Sheets.getByName(&quot;FA_Report&quot;)
+        HistoryFolderURL = ConvertToURL(GetCurrentFolder() &amp; &quot;\History&quot;)
         HistoryURL = ConvertToURL(GetCurrentFolder() &amp; &quot;\History\History.ods&quot;)
 
-        ErrorStage = &quot;開啟或建立 History.ods&quot;
+        ErrorStage = &quot;建立 History 資料夾&quot;
         oSimpleFileAccess = CreateUnoService(&quot;com.sun.star.ucb.SimpleFileAccess&quot;)
+        If Not oSimpleFileAccess.exists(HistoryFolderURL) Then
+            oSimpleFileAccess.createFolder(HistoryFolderURL)
+        End If
+
+        ErrorStage = &quot;開啟或建立 History.ods&quot;
         oDesktop = CreateUnoService(&quot;com.sun.star.frame.Desktop&quot;)
 
         aLoadArgs(0).Name = &quot;Hidden&quot;
@@ -202,7 +216,7 @@ Sub ArchiveData()
         If oSimpleFileAccess.exists(HistoryURL) Then
             oHistoryDoc = oDesktop.loadComponentFromURL(HistoryURL, &quot;_blank&quot;, 0, aLoadArgs())
         Else
-            oHistoryDoc = oDesktop.loadComponentFromURL(&quot;Private:factory/scalc&quot;, &quot;_blank&quot;, 0, aLoadArgs())
+                oHistoryDoc = oDesktop.loadComponentFromURL(&quot;private:factory/scalc&quot;, &quot;_blank&quot;, 0, aLoadArgs())
             NewHistory = True
         End If
         HistoryOpen = True
